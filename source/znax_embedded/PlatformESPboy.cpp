@@ -6,7 +6,10 @@
 //every platform's source sits in the sketch folder, only the one being built compiles
 #ifdef PLATFORM_ESPBOY
 
+extern bool webAppStore;
+
 #include <stdarg.h>
+#include <stdlib.h>
 #include <EEPROM.h>
 #if LOVYANGFX
 //the ESPboy's ST7735 panel for LovyanGFX: SPI pins, chip select and backlight on the I/O expander
@@ -34,8 +37,10 @@ PlatformBuffer screenBuffer(&myESPboy.tft);
 static uint16_t bufferSetColor = 0xFFFF, bufferClearColor = 0x0000;
 #endif
 #if (SCREENBUFFER == 8) && LOVYANGFX
-//every RGB332 value as a 16 bit pixel in display byte order, see Platform_PresentFrame
-static uint16_t bufferPalette[256];
+//Every RGB332 value as a 16 bit pixel in display byte order, see Platform_PresentFrame. It is
+//allocated in Platform_Init and only when the game is what runs: the web app store has no frame to
+//show and would rather have the 512 bytes
+static uint16_t* bufferPalette = nullptr;
 #endif
 
 //the Arduino core starts the program here
@@ -51,9 +56,15 @@ void loop()
 
 void Platform_Init(const char* appName)
 {
-	//the serial port Platform_Log writes to
-	Serial.begin(115200);
+	//button press or so ?
+	webAppStore = false; 
+	if(webAppStore)
+	{
+		myESPboy.begin("Web App Store");
+		return;
+	}
 	myESPboy.begin(appName);
+
 #if SCREENBUFFER
 	//LovyanGFX makes a 1 bpp sprite a two colour palette sprite, drawing into it only
 	//looks at the lowest bit of a colour: ColorWhite sets a bit, ColorBlack clears it
@@ -66,12 +77,16 @@ void Platform_Init(const char* appName)
 	screenBuffer.setSwapBytes(SCREENBUFFER == 16);
 #endif
 	if (!screenBuffer.createSprite(WINDOW_WIDTH, WINDOW_HEIGHT))
-		Serial.println("screen buffer could not be allocated");
+		Platform_Log("screen buffer could not be allocated\n");
 #endif
 #if (SCREENBUFFER == 8) && LOVYANGFX
 	//the library's own RGB332 to RGB565 conversion, so the colours are the ones pushSprite showed
-	for (uint16_t i = 0; i < 256; i++)
-		bufferPalette[i] = (uint16_t)lgfx::color_convert<lgfx::swap565_t, lgfx::rgb332_t>(i);
+	bufferPalette = (uint16_t*)malloc(256 * sizeof(uint16_t));
+	if (!bufferPalette)
+		Platform_Log("the palette could not be allocated\n");
+	else
+		for (uint16_t i = 0; i < 256; i++)
+			bufferPalette[i] = (uint16_t)lgfx::color_convert<lgfx::swap565_t, lgfx::rgb332_t>(i);
 #endif
 }
 
@@ -102,6 +117,11 @@ void Platform_PresentFrame(void)
 	const uint8_t* src = (const uint8_t*)SCREENBUFFER_PIXELS();
 	if (!src)
 		return;
+  #if SCREENBUFFER == 8
+	//the palette is not there in a web app store build, and without it there is nothing to show
+	if (!bufferPalette)
+		return;
+  #endif
 	uint16_t line[WINDOW_WIDTH];
 	SCREEN.startWrite();
 	SCREEN.setAddrWindow(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -169,6 +189,14 @@ uint32_t Platform_RandomSeed(void)
 
 void Platform_Log(const char* format, ...)
 {
+	//the serial port is opened by the first thing that logs, so a build that never logs does not
+	//take it and nothing has to remember to open it
+	static bool serialStarted = false;
+	if (!serialStarted)
+	{
+		Serial.begin(115200);
+		serialStarted = true;
+	}
 	char text[128];
 	va_list args;
 	va_start(args, format);

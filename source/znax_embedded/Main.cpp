@@ -29,6 +29,7 @@ const uint32_t timePerFrame =  1000000 / FRAMERATE;
 static float frameRate = 0;
 static uint32_t currentTime = 0, lastTime = 0, frameTime = 0;
 static bool endFrame = true;
+bool webAppStore = false;
 
 static uint32_t getFreeRam() {
   return Platform_FreeHeap();
@@ -75,100 +76,122 @@ static void printDebugCpuRamLoad()
 
 void Game_Setup(void)
 {
+    //webAppStore is set in Platform_Init
     Platform_Init("Znax v1.0");
-    debugMode = false;
-    needRedraw = 1;
-    LoadHighScores();
-    initSound();
-    initMusic();
-    setSoundOn(true);
-    setMusicOn(true);
-    preloadImages();
-    //with a 1 bpp buffer, the colours its set and clear bits are shown in. The skin is
-    //always black & white there
-    Platform_SetBufferColors(SCREEN.color565(255,255,255), SCREEN.color565(0,0,0));
-    World = CWorldParts_Create();
-    Selector = CSelector_Create(NrOfCols / 2, NrOfRows / 2);
-    MenuGameType = CGameTypeMenu_Create();
-    MainMenu = CMainMenu_Create();
-    trackLowestFreeRam();
-    currentTime = Platform_Micros();
-    lastTime = 0;
+    if(!webAppStore)
+    {
+        Platform_Log("Free Ram at boot game: %6" PRIu32 "\n", getFreeRam());
+        debugMode = false;
+        needRedraw = 1;
+        LoadHighScores();
+        initSound();
+        initMusic();
+        setSoundOn(true);
+        setMusicOn(true);
+        preloadImages();
+        //with a 1 bpp buffer, the colours its set and clear bits are shown in. The skin is
+        //always black & white there
+        Platform_SetBufferColors(SCREEN.color565(255,255,255), SCREEN.color565(0,0,0));
+        World = CWorldParts_Create();
+        Selector = CSelector_Create(NrOfCols / 2, NrOfRows / 2);
+        MenuGameType = CGameTypeMenu_Create();
+        MainMenu = CMainMenu_Create();
+        trackLowestFreeRam();
+        currentTime = Platform_Micros();
+        lastTime = 0;
+    }
+    else
+    {
+        //webappstore stuff
+    }
 }
 
 void Game_Loop(void)
 {
-    currentTime = Platform_Micros();
-    frameTime  = currentTime - lastTime;
-#if FPSLOCK
-    if((frameTime < timePerFrame) || !endFrame)
-       return;
-#else
-    //no lock, a frame starts as soon as the last one is done
-    if(!endFrame)
-       return;
-#endif
-    endFrame = false;
-    //without the lock two frames can start within the same microsecond on a fast PC
-    frameRate = 1000000.0 / (frameTime ? frameTime : 1);
-    lastTime = currentTime;
-    //keeps the milliseconds counting even on screens that do not ask for them
-    getMillis();
-    musicTimer();
-    prevButtons = currButtons;
-    currButtons = Platform_GetButtons();
+    if(!webAppStore)
+    {        
+        currentTime = Platform_Micros();
+        frameTime  = currentTime - lastTime;
+    #if FPSLOCK
+        if((frameTime < timePerFrame) || !endFrame)
+        return;
+    #else
+        //no lock, a frame starts as soon as the last one is done
+        if(!endFrame)
+        return;
+    #endif
+        endFrame = false;
+        //without the lock two frames can start within the same microsecond on a fast PC
+        frameRate = 1000000.0 / (frameTime ? frameTime : 1);
+        lastTime = currentTime;
+        //keeps the milliseconds counting even on screens that do not ask for them
+        getMillis();
+        musicTimer();
+        prevButtons = currButtons;
+        currButtons = Platform_GetButtons();
 
-    if((currButtons & BUTTON_UP) && (currButtons & BUTTON_DOWN) && !(prevButtons & BUTTON_DOWN))
-    {
-        debugMode = !debugMode;
-        //the screens only draw what changed, the debug header has to be drawn over
-        needRedraw = 1;
+        if((currButtons & BUTTON_UP) && (currButtons & BUTTON_DOWN) && !(prevButtons & BUTTON_DOWN))
+        {
+            debugMode = !debugMode;
+            //the screens only draw what changed, the debug header has to be drawn over
+            needRedraw = 1;
+        }
+
+        switch(GameState)
+        {
+            case GSGame :
+            case GSGameInit:
+                Game();
+                break;
+            case GSTitleScreen:
+            case GSTitleScreenInit:
+                TitleScreen();
+                break;
+            case GSIntro :
+            case GSIntroInit :
+                Intro();
+                break;
+            case GSReadyGo:
+            case GSReadyGoInit:
+                ReadyGo();
+                break;
+            case GSTimeOver:
+            case GSTimeOverInit:
+                TimeOver();
+                break;
+            case GSCredits:
+            case GSCreditsInit:
+                Credits();
+                break;
+            case GSGameTypeMenu:
+            case GSGameTypeMenuInit:
+                GameTypeMenu();
+                break;
+            case GSShowHighScores:
+            case GSShowHighScoresInit:
+                ShowHighScores();
+                break;
+            case GSGetHighScoreName:
+            case GSGetHighScoreNameInit:
+                GetHighScoreName();
+                break;
+            default :
+                break;
+        }
+
+        trackLowestFreeRam();
+        printDebugCpuRamLoad();
+        Platform_PresentFrame();
+        endFrame = true;
     }
-
-    switch(GameState)
+    else
     {
-        case GSGame :
-        case GSGameInit:
-            Game();
-            break;
-        case GSTitleScreen:
-        case GSTitleScreenInit:
-            TitleScreen();
-            break;
-        case GSIntro :
-        case GSIntroInit :
-            Intro();
-            break;
-        case GSReadyGo:
-        case GSReadyGoInit:
-            ReadyGo();
-            break;
-        case GSTimeOver:
-        case GSTimeOverInit:
-            TimeOver();
-            break;
-        case GSCredits:
-        case GSCreditsInit:
-            Credits();
-            break;
-        case GSGameTypeMenu:
-        case GSGameTypeMenuInit:
-            GameTypeMenu();
-            break;
-        case GSShowHighScores:
-        case GSShowHighScoresInit:
-            ShowHighScores();
-            break;
-        case GSGetHighScoreName:
-        case GSGetHighScoreNameInit:
-            GetHighScoreName();
-            break;
-        default :
-            break;
+        //webappstore stuff
+        static uint32_t prev = 0;
+        if(Platform_Micros() - prev > 1000000)
+        {
+            prev = Platform_Micros();
+            Platform_Log("Free Ram webappstore: %6" PRIu32 "\n", getFreeRam());
+        }
     }
-
-    trackLowestFreeRam();
-    printDebugCpuRamLoad();
-    Platform_PresentFrame();
-    endFrame = true;
 }
