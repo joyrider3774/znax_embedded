@@ -1,0 +1,23 @@
+# editors
+/.vscode
+/.vs
+
+# what the device builds leave behind
+/build
+/build_windows
+/output.map
+/output-orig.map
+/psp/build*
+/vita/build*
+/gba/build*
+/libretro/build*
+/playdate/build_*
+/playdate/Source/pdex.*
+/playdate/*.pdx
+
+# the built files do not belong in the repository, they go to the GitHub release
+/releases/
+
+# what Python leaves next to the scripts in tools/
+__pycache__/
+*.pyc

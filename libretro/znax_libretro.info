@@ -1,0 +1,29 @@
+# Software Information
+display_name = "Znax"
+authors = "Willems Davy"
+supported_extensions = ""
+corename = "Znax"
+categories = "Game"
+license = "MIT"
+permissions = ""
+display_version = "1.0"
+
+# Hardware Information
+manufacturer = "N/A"
+systemname = "Znax"
+systemid = "znax"
+
+# Libretro Features
+supports_no_game = "true"
+savestate = "false"
+cheats = "false"
+input_descriptors = "true"
+memory_descriptors = "false"
+libretro_saves = "true"
+core_options = "false"
+hw_render = "false"
+needs_fullpath = "false"
+disk_control = "false"
+is_experimental = "false"
+
+description = "Znax is a remake of a game by Nick Kouvaris: select 4 blocks of the same colour as the corners of rectangles as big as you can."

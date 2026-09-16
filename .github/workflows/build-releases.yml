@@ -1,0 +1,196 @@
+# Builds every device's release file on a Linux runner and uploads them all as one artifact.
+#
+# The toolchains are pinned to the versions the game is developed against, so a build a year from now
+# is the same build. The Windows exe, the libretro dll and the Playdate simulator's pdex.dll are cross
+# compiled with mingw-w64 (tools/mingw-w64.cmake), so the Linux runner still produces the same files
+# as a Windows machine does.
+#
+# The PSP is the reason this is a Linux job: pspdev has no Windows toolchain at all.
+
+name: Build releases
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  # the Arduino side, the versions this game is built with
+  ARDUINO_CLI_VERSION: 1.5.1
+  CORE_ESP8266: 3.1.2
+  CORE_GAMEBUINO: 1.2.2
+  CORE_ADAFRUIT_SAMD: 1.7.16
+  CORE_RP2040: 5.5.0
+  # the Gamebuino's core uses Arduino's own CMSIS-Atmel tool package for sam.h, which comes with the
+  # arduino:samd core: without it the build stops at "sam.h: No such file or directory"
+  CORE_ARDUINO_SAMD: 1.8.14
+  # LovyanGFX and TFT_eSPI are what the ESPboy build needs. TFT_eSPI 2.4.76, which the development
+  # machine has, was never released to the library index (it is a snapshot between 2.4.72 and 2.4.79):
+  # the ESPboy draws through LovyanGFX and only includes TFT_eSPI's header, so 2.4.72 does as well
+  LIB_LOVYANGFX: 1.1.9
+  LIB_TFT_ESPI: 2.4.72
+  LIB_NEOPIXEL: 1.15.5
+  LIB_SPIFLASH: 5.1.1
+  LIB_GAMEBUINO: 1.3.3
+  # the PyBadge and the PyGamer draw through Adafruit's GFX and ST7735 libraries
+  LIB_GFX: 1.12.6
+  LIB_ST7735: 1.5.15
+  LIB_BUSIO: 1.17.4
+  # the other toolchains
+  SDL2_VERSION: 2.32.10
+  PSPDEV_RELEASE: v20260901
+  VITASDK_RELEASE: softfp-linux-v2.228
+  VITASDK_ASSET: vitasdk-x86_64-linux-gnu-2022-08-14_14-50-39.tar.bz2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the game
+        uses: actions/checkout@v4
+
+      - name: Install the packages the builds need
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential python3 \
+            mingw-w64 gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib
+
+      # ------------------------------------------------------------------ toolchains
+      - name: Cache the toolchains
+        id: toolchains
+        uses: actions/cache@v4
+        with:
+          path: ~/toolchains
+          key: toolchains-${{ env.SDL2_VERSION }}-${{ env.PSPDEV_RELEASE }}-${{ env.VITASDK_RELEASE }}-${{ env.ARDUINO_CLI_VERSION }}
+
+      - name: Download the toolchains
+        if: steps.toolchains.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          mkdir -p ~/toolchains/bin
+          cd ~/toolchains
+
+          echo "::group::Playdate SDK"
+          curl -sL -o playdate.tar.gz https://download.panic.com/playdate_sdk/Linux/PlaydateSDK-latest.tar.gz
+          tar -xzf playdate.tar.gz && rm playdate.tar.gz
+          mv PlaydateSDK-* PlaydateSDK
+          echo "::endgroup::"
+
+          echo "::group::pspdev"
+          curl -sL -o pspdev.tar.gz \
+            https://github.com/pspdev/pspdev/releases/download/${PSPDEV_RELEASE}/pspdev-ubuntu-latest-x86_64.tar.gz
+          mkdir -p pspdev && tar -xzf pspdev.tar.gz -C pspdev --strip-components=1 && rm pspdev.tar.gz
+          echo "::endgroup::"
+
+          echo "::group::VitaSDK"
+          curl -sL -o vitasdk.tar.bz2 \
+            https://github.com/vitasdk/buildscripts/releases/download/${VITASDK_RELEASE}/${VITASDK_ASSET}
+          mkdir -p vitasdk && tar -xjf vitasdk.tar.bz2 -C vitasdk --strip-components=1 && rm vitasdk.tar.bz2
+          echo "::endgroup::"
+
+          echo "::group::SDL2 for mingw"
+          curl -sL -o sdl2.tar.gz \
+            https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VERSION}/SDL2-devel-${SDL2_VERSION}-mingw.tar.gz
+          tar -xzf sdl2.tar.gz && rm sdl2.tar.gz
+          mv SDL2-${SDL2_VERSION} SDL2
+          echo "::endgroup::"
+
+          echo "::group::libretro-common"
+          git clone --depth 1 https://github.com/libretro/libretro-common.git libretro-common
+          echo "::endgroup::"
+
+          echo "::group::arduino-cli"
+          curl -sL -o arduino-cli.tar.gz \
+            https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz
+          tar -xzf arduino-cli.tar.gz -C bin arduino-cli && rm arduino-cli.tar.gz
+          echo "::endgroup::"
+
+      - name: Install devkitARM and libgba for the Game Boy Advance
+        run: |
+          set -e
+          # This is what devkitPro's install-devkitpro-pacman script does, done here instead of
+          # downloading it: that URL sits behind Cloudflare, which answers some runners with a
+          # challenge page, and running that page as a shell script fails with
+          # "Syntax error: newline unexpected". The gpg key wants devkitPro's own user agent
+          sudo apt-get install -y apt-transport-https
+          sudo mkdir -p /usr/share/keyring
+          sudo wget -U "dkp apt" -O /usr/share/keyring/devkitpro-pub.gpg https://apt.devkitpro.org/devkitpro-pub.gpg
+          # a challenge page instead of the key would only fail later and unclearly
+          if [ "$(head -c 1 /usr/share/keyring/devkitpro-pub.gpg)" = "<" ]; then
+            echo "devkitPro's gpg key came back as a web page, not a key"; exit 1
+          fi
+          echo "deb [signed-by=/usr/share/keyring/devkitpro-pub.gpg] https://apt.devkitpro.org stable main" | sudo tee /etc/apt/sources.list.d/devkitpro.list
+          sudo apt-get update
+          sudo apt-get install -y devkitpro-pacman
+          sudo dkp-pacman -S --noconfirm --needed gba-dev
+
+      # ------------------------------------------------------------------ the Arduino boards
+      - name: Cache the Arduino cores and libraries
+        id: arduino
+        uses: actions/cache@v4
+        with:
+          path: ~/.arduino15
+          key: arduino-${{ env.CORE_ESP8266 }}-${{ env.CORE_GAMEBUINO }}-${{ env.CORE_ADAFRUIT_SAMD }}-${{ env.CORE_RP2040 }}-${{ env.CORE_ARDUINO_SAMD }}-${{ env.LIB_LOVYANGFX }}-${{ env.LIB_TFT_ESPI }}-${{ env.LIB_GFX }}
+
+      - name: Install the board packages and the libraries
+        if: steps.arduino.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          export PATH="$HOME/toolchains/bin:$PATH"
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls \
+            https://arduino.esp8266.com/stable/package_esp8266com_index.json \
+            https://gamebuino.com/sdk/package_gamebuino_index.json \
+            https://adafruit.github.io/arduino-board-index/package_adafruit_index.json \
+            https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266@${CORE_ESP8266}
+          arduino-cli core install gamebuino:samd@${CORE_GAMEBUINO}
+          arduino-cli core install adafruit:samd@${CORE_ADAFRUIT_SAMD}
+          arduino-cli core install rp2040:rp2040@${CORE_RP2040}
+          arduino-cli core install arduino:samd@${CORE_ARDUINO_SAMD}
+          # the ESPboy draws with LovyanGFX, the PyBadge and PyGamer use the Adafruit libraries and
+          # the Gamebuino META its own. The RP2040 and RP2350 devices need no library at all
+          arduino-cli lib install "LovyanGFX@${LIB_LOVYANGFX}"
+          arduino-cli lib install "TFT_eSPI@${LIB_TFT_ESPI}"
+          arduino-cli lib install "Adafruit NeoPixel@${LIB_NEOPIXEL}"
+          arduino-cli lib install "Adafruit SPIFlash@${LIB_SPIFLASH}"
+          arduino-cli lib install "Gamebuino META@${LIB_GAMEBUINO}"
+          arduino-cli lib install "Adafruit BusIO@${LIB_BUSIO}"
+          arduino-cli lib install "Adafruit GFX Library@${LIB_GFX}"
+          arduino-cli lib install "Adafruit ST7735 and ST7789 Library@${LIB_ST7735}"
+
+      # ------------------------------------------------------------------ the builds
+      - name: Build every device
+        run: |
+          python3 tools/build_releases.py \
+            --arduino-cli "$HOME/toolchains/bin/arduino-cli" \
+            --msys2 "" \
+            --playdate-sdk "$HOME/toolchains/PlaydateSDK" \
+            --playdate-arm /usr/bin \
+            --devkitpro /opt/devkitpro \
+            --pspdev "$HOME/toolchains/pspdev" \
+            --vitasdk "$HOME/toolchains/vitasdk" \
+            --libretro-common "$HOME/toolchains/libretro-common" \
+            --lovyangfx "$HOME/Arduino/libraries/LovyanGFX" \
+            --cross-windows \
+            --sdl2-mingw "$HOME/toolchains/SDL2/x86_64-w64-mingw32"
+
+      - name: Upload the release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: releases
+          path: releases/
+          if-no-files-found: error
+
+      - name: Upload the build logs when something failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: /tmp/*_releases/*.log
+          if-no-files-found: ignore
