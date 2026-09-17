@@ -53,6 +53,8 @@ typedef TFT_eSprite PlatformBuffer;
 
 //Data in flash: the ESP8266 maps it into memory, but that memory only takes 32 bit reads.
 //pgm_read_byte / pgm_read_word read it safely whatever the alignment
+//flash is mapped, but that memory only takes 32 bit reads, so it goes through the reads below
+#define PLATFORM_DIRECT_FLASH 0
 #define PLATFORM_PROGMEM PROGMEM
 #define PLATFORM_READ_BYTE(addr) pgm_read_byte(addr)
 #define PLATFORM_READ_WORD(addr) pgm_read_word(addr)

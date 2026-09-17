@@ -41,6 +41,13 @@
 #error "the device header has to define SCREENBUFFER"
 #endif
 
+//1 when data in flash is plain memory that can be read through a pointer of its own type.
+//Only the ESP8266 has to go through PLATFORM_READ_xxx, and where a few pixels are read at a
+//time its memcpy costs more than reading them where they lie. A device header sets this to 0
+#ifndef PLATFORM_DIRECT_FLASH
+#define PLATFORM_DIRECT_FLASH 1
+#endif
+
 // ===========================================================================
 // What the game supplies
 // ===========================================================================

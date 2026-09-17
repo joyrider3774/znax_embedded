@@ -85,9 +85,13 @@ static bool spiPending = false;
 
 static inline void SpiWrite(uint8_t value)
 {
-	while (!SERCOM4->SPI.INTFLAG.bit.DRE)
+	//the whole registers, not their bitfields: a bitfield write is a read modify write, and
+	//reading DATA takes the byte the display sent back out of the receive buffer. At 24MHz a
+	//byte is on its way out in 16 cycles of the 48MHz core, so what happens per byte here is
+	//what decides whether the display is kept busy
+	while (!(SERCOM4->SPI.INTFLAG.reg & SERCOM_SPI_INTFLAG_DRE))
 		;
-	SERCOM4->SPI.DATA.bit.DATA = value;
+	SERCOM4->SPI.DATA.reg = value;
 	spiPending = true;
 }
 
@@ -349,6 +353,54 @@ size_t PlatformGamebuinoGFX::drawChar(uint16_t c, int32_t x, int32_t y)
 	}
 	if (fillBackground)
 		fillRect(x + 5 * size, y, size, 8 * size, textBackground);
+	endWrite();
+	return 6 * size;
+}
+
+//Same character as the one above, but painted as one window: a run of pixels through
+//fillRect costs a window of its own, and a window is command bytes the SPI has to drain
+//before anything else can follow. A whole line of text was more of a frame than the board
+//it was drawn over. A background the same as the text colour still goes the other way,
+//there the pixels between the glyph are left as they are
+#define FASTCHARSIZE 2   //text this size or smaller is built in the buffer below
+static uint16_t charCell[6 * FASTCHARSIZE * 8 * FASTCHARSIZE];
+
+size_t PlatformGamebuinoDisplay::drawChar(uint16_t c, int32_t x, int32_t y)
+{
+	const int32_t size = textSize;
+	if (c >= 176)
+		c++;
+	if (c > 255)
+		return 6 * size;
+	const int32_t w = 6 * size, h = 8 * size;
+	//a character that hangs off the screen is left to the clipping the run path does
+	if ((textBackground == textColor) || (size > FASTCHARSIZE) ||
+		(x < 0) || (y < 0) || (x + w > WINDOW_WIDTH) || (y + h > WINDOW_HEIGHT))
+		return PlatformGamebuinoGFX::drawChar(c, x, y);
+
+	//the cell is filled a glyph pixel at a time, never worked out per screen pixel: the
+	//core has no divide instruction, so a division per pixel costs more than the drawing
+	const uint8_t* glyph = &platformFont[c * 5];
+	uint16_t* d = charCell;
+	for (int32_t glyphRow = 0; glyphRow < 8; glyphRow++)
+	{
+		const uint16_t* rowStart = d;
+		for (int32_t glyphCol = 0; glyphCol < 5; glyphCol++)
+		{
+			const uint16_t color = (((glyph[glyphCol] >> glyphRow) & 1) != 0) ? textColor : textBackground;
+			for (int32_t i = 0; i < size; i++)
+				*d++ = color;
+		}
+		//the sixth column is the space between characters
+		for (int32_t i = 0; i < size; i++)
+			*d++ = textBackground;
+		//a scaled cell repeats the row it just built
+		for (int32_t i = 1; i < size; i++, d += w)
+			memcpy(d, rowStart, w * sizeof(uint16_t));
+	}
+	startWrite();
+	setAddrWindow(x, y, w, h);
+	writePixels(charCell, w * h, true);
 	endWrite();
 	return 6 * size;
 }

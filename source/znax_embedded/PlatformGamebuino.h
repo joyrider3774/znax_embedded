@@ -53,8 +53,9 @@ public:
 	//a background the same as the text colour is not painted, as in LovyanGFX
 	void setTextColor(uint16_t fg, uint16_t bg) { textColor = fg; textBackground = bg; }
 	void setTextSize(uint8_t size) { textSize = size ? size : 1; }
-	//draws character c of the GLCD font at x,y and returns how far the text moves on
-	size_t drawChar(uint16_t c, int32_t x, int32_t y);
+	//draws character c of the GLCD font at x,y and returns how far the text moves on.
+	//the display draws it in one go, see PlatformGamebuinoDisplay::drawChar
+	virtual size_t drawChar(uint16_t c, int32_t x, int32_t y);
 
 	//a transaction around a group of drawing calls, only the display needs one
 	virtual void startWrite(void) {}
@@ -84,6 +85,8 @@ public:
 	//bytes as they are, for pixels already in display order
 	void writeBytes(const uint8_t* data, uint32_t length);
 	void fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t color) override;
+	//the whole character as one window instead of a window per run of pixels
+	size_t drawChar(uint16_t c, int32_t x, int32_t y) override;
 
 private:
 	uint8_t writeDepth = 0;
