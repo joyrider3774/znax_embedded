@@ -42,6 +42,11 @@ env:
   PSPDEV_RELEASE: v20260901
   VITASDK_RELEASE: softfp-linux-v2.228
   VITASDK_ASSET: vitasdk-x86_64-linux-gnu-2022-08-14_14-50-39.tar.bz2
+  # devkitARM and libgba come from a repack of devkitPro's gba-dev packages on joyrider3774/sdks:
+  # pkg.devkitpro.org answers runners with 403 too often to install them from there
+  DEVKITPRO_RELEASE: v1.0
+  DEVKITPRO_ASSET: devkitpro-gba-dev-linux-x86_64-r68.tar.xz
+  DEVKITPRO_SHA256: 515d0965c7fa4e402a1afe03dc0f7daa2246fcf7a29c9e3cecacd271a7154586
 
 jobs:
   build:
@@ -112,41 +117,13 @@ jobs:
       - name: Install devkitARM and libgba for the Game Boy Advance
         run: |
           set -e
-          # This is what devkitPro's install-devkitpro-pacman script does, done here instead of
-          # downloading it: that URL sits behind Cloudflare, which answers some runners with a
-          # challenge page, and running that page as a shell script fails with
-          # "Syntax error: newline unexpected". The gpg key wants devkitPro's own user agent
-          sudo apt-get install -y apt-transport-https
-          sudo mkdir -p /usr/share/keyring
-          sudo wget -U "dkp apt" -O /usr/share/keyring/devkitpro-pub.gpg https://apt.devkitpro.org/devkitpro-pub.gpg
-          # a challenge page instead of the key would only fail later and unclearly
-          if [ "$(head -c 1 /usr/share/keyring/devkitpro-pub.gpg)" = "<" ]; then
-            echo "devkitPro's gpg key came back as a web page, not a key"; exit 1
-          fi
-          echo "deb [signed-by=/usr/share/keyring/devkitpro-pub.gpg] https://apt.devkitpro.org stable main" | sudo tee /etc/apt/sources.list.d/devkitpro.list
-          sudo apt-get update
-          # Installing devkitpro-pacman ends with a package database sync, and pkg.devkitpro.org
-          # (a different host from apt.devkitpro.org, behind Cloudflare) answers a runner with
-          # "403" every now and then, which makes that post install step, and with it dpkg, fail.
-          # So the install is allowed to get that far and the sync is retried on its own
-          sudo apt-get install -y devkitpro-pacman || echo "the package database sync did not go through, retrying it below"
-          synced=
-          for attempt in 1 2 3 4 5; do
-            if sudo dkp-pacman -Sy --noconfirm; then synced=yes; break; fi
-            echo "pkg.devkitpro.org refused the databases (try $attempt), waiting a moment"
-            sleep $((attempt * 15))
-          done
-          if [ -z "$synced" ]; then
-            echo "pkg.devkitpro.org kept refusing the package databases, this is its rate limiting and not the build"
-            exit 1
-          fi
-          # finish the package off now that its sync has gone through
-          sudo dpkg --configure -a
-          for attempt in 1 2 3; do
-            if sudo dkp-pacman -S --noconfirm --needed gba-dev; then break; fi
-            echo "downloading gba-dev failed (try $attempt), waiting a moment"
-            sleep $((attempt * 15))
-          done
+          # the archive holds a devkitpro folder (devkitARM, libgba, tools, ...) that goes in /opt,
+          # PACKAGES.txt in it lists the devkitPro package versions it was made from
+          curl -sSfL --retry 5 -o devkitpro.tar.xz https://github.com/joyrider3774/sdks/releases/download/${DEVKITPRO_RELEASE}/${DEVKITPRO_ASSET}
+          echo "${DEVKITPRO_SHA256}  devkitpro.tar.xz" | sha256sum -c -
+          sudo tar -xJf devkitpro.tar.xz -C /opt && rm devkitpro.tar.xz
+          test -x /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc
+          test -x /opt/devkitpro/tools/bin/gbafix
           test -f /opt/devkitpro/libgba/include/gba.h
 
       # ------------------------------------------------------------------ the Arduino boards
