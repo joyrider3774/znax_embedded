@@ -170,7 +170,7 @@ jobs:
       - name: Upload the release files
         uses: actions/upload-artifact@v4
         with:
-          name: releases
+          name: znax_releases
           path: releases/
           if-no-files-found: error
 
