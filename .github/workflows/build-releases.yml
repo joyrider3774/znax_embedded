@@ -65,15 +65,9 @@ jobs:
             libstdc++-arm-none-eabi-newlib
 
       # ------------------------------------------------------------------ toolchains
-      - name: Cache the toolchains
-        id: toolchains
-        uses: actions/cache@v4
-        with:
-          path: ~/toolchains
-          key: toolchains-${{ env.SDL2_VERSION }}-${{ env.PSPDEV_RELEASE }}-${{ env.VITASDK_RELEASE }}-${{ env.ARDUINO_CLI_VERSION }}
-
+      # not cached: restoring a cache left the builds without parts of what was installed,
+      # everything is downloaded fresh on every run instead
       - name: Download the toolchains
-        if: steps.toolchains.outputs.cache-hit != 'true'
         run: |
           set -e
           mkdir -p ~/toolchains/bin
@@ -127,15 +121,10 @@ jobs:
           test -f /opt/devkitpro/libgba/include/gba.h
 
       # ------------------------------------------------------------------ the Arduino boards
-      - name: Cache the Arduino cores and libraries
-        id: arduino
-        uses: actions/cache@v4
-        with:
-          path: ~/.arduino15
-          key: arduino-${{ env.CORE_ESP8266 }}-${{ env.CORE_GAMEBUINO }}-${{ env.CORE_ADAFRUIT_SAMD }}-${{ env.CORE_RP2040 }}-${{ env.CORE_ARDUINO_SAMD }}-${{ env.LIB_LOVYANGFX }}-${{ env.LIB_TFT_ESPI }}-${{ env.LIB_GFX }}
-
+      # not cached either: the cache only held ~/.arduino15, the libraries go in ~/Arduino/libraries,
+      # so a restored cache skipped installing them and the builds could not find LovyanGFX,
+      # SdFat or Adafruit_GFX
       - name: Install the board packages and the libraries
-        if: steps.arduino.outputs.cache-hit != 'true'
         run: |
           set -e
           export PATH="$HOME/toolchains/bin:$PATH"
