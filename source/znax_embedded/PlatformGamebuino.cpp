@@ -363,7 +363,9 @@ size_t PlatformGamebuinoGFX::drawChar(uint16_t c, int32_t x, int32_t y)
 //it was drawn over. A background the same as the text colour still goes the other way,
 //there the pixels between the glyph are left as they are
 #define FASTCHARSIZE 2   //text this size or smaller is built in the buffer below
-static uint16_t charCell[6 * FASTCHARSIZE * 8 * FASTCHARSIZE];
+//only taken from the heap the first time text is drawn this way, and kept from then on.
+//NULL until then, or when that allocation failed, and the run path draws the character
+static uint16_t* charCell = NULL;
 
 size_t PlatformGamebuinoDisplay::drawChar(uint16_t c, int32_t x, int32_t y)
 {
@@ -377,6 +379,14 @@ size_t PlatformGamebuinoDisplay::drawChar(uint16_t c, int32_t x, int32_t y)
 	if ((textBackground == textColor) || (size > FASTCHARSIZE) ||
 		(x < 0) || (y < 0) || (x + w > WINDOW_WIDTH) || (y + h > WINDOW_HEIGHT))
 		return PlatformGamebuinoGFX::drawChar(c, x, y);
+
+	if (!charCell)
+	{
+		charCell = (uint16_t*)malloc(6 * FASTCHARSIZE * 8 * FASTCHARSIZE * sizeof(uint16_t));
+		//without it the character still goes out, a window per run of pixels
+		if (!charCell)
+			return PlatformGamebuinoGFX::drawChar(c, x, y);
+	}
 
 	//the cell is filled a glyph pixel at a time, never worked out per screen pixel: the
 	//core has no divide instruction, so a division per pixel costs more than the drawing
