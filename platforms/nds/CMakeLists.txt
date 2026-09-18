@@ -37,7 +37,7 @@ if(NOT EXISTS "${DEVKITPRO}/calico/share/ds9.specs")
 endif()
 
 # the game's folder, next to this one unless a build copies this folder somewhere else
-set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../source/znax_embedded" CACHE PATH "the game's source folder")
+set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../source/znax_embedded" CACHE PATH "the game's source folder")
 
 # where drawing goes, see SCREENBUFFER in PlatformNDS.h: 0 (straight to the bitmap), 1, 8 or 16
 set(SCREENBUFFER 0 CACHE STRING "SCREENBUFFER setting: 0, 1, 8 or 16")

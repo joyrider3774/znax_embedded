@@ -31,7 +31,7 @@ if(NOT EXISTS "${CMAKE_CXX_COMPILER}")
 endif()
 
 # the game's folder, next to this one unless a build copies this folder somewhere else
-set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../source/znax_embedded" CACHE PATH "the game's source folder")
+set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../source/znax_embedded" CACHE PATH "the game's source folder")
 
 # where drawing goes, see SCREENBUFFER in PlatformDOS.h: 0 (straight into the frame), 1, 8 or 16.
 # 8 is what the screen itself holds, so a frame reaches the card without a colour being worked out

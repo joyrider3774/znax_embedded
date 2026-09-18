@@ -25,7 +25,7 @@ if(NOT EXISTS "${LIBRETRO_COMMON_DIR}/include/libretro.h")
 endif()
 
 # the game's folder, next to this one unless a build copies this folder somewhere else
-set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../source/znax_embedded" CACHE PATH "the game's source folder")
+set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../source/znax_embedded" CACHE PATH "the game's source folder")
 
 # where drawing goes, see SCREENBUFFER in PlatformLibretro.h: 1, 8 or 16
 set(SCREENBUFFER 16 CACHE STRING "SCREENBUFFER setting: 1, 8 or 16")

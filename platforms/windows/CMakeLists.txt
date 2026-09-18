@@ -55,7 +55,7 @@ if(NOT FORCEDEBUG MATCHES "^(0|1)$")
     message(FATAL_ERROR "FORCEDEBUG has to be 0 or 1, not ${FORCEDEBUG}")
 endif()
 
-set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/source/znax_embedded")
+set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../source/znax_embedded")
 
 # the game's files, not the ESPboy platform or its library (lib/ is not globbed). The
 # images are headers in images/<skin>/, included relative to the game folder

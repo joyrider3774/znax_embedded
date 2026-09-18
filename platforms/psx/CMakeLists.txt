@@ -37,7 +37,7 @@ set(CMAKE_C_STANDARD 11)
 set(GAME_NAME Znax)
 
 # the game's folder, next to this one unless a build copies this folder somewhere else
-set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../source/znax_embedded" CACHE PATH "the game's source folder")
+set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../source/znax_embedded" CACHE PATH "the game's source folder")
 
 # where drawing goes, see SCREENBUFFER in PlatformPSX.h: 1, 8 or 16, the screen is never drawn to
 # straight

@@ -215,6 +215,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, ".."))
 SOURCE = os.path.join(ROOT, "source", SKETCH)
 RELEASES = os.path.join(ROOT, "releases")
+# every platform keeps its build files in a folder of its own under here
+PLATFORMS = os.path.join(ROOT, "platforms")
 WORK = os.path.join(tempfile.gettempdir(), SKETCH + "_releases")
 
 
@@ -330,7 +332,8 @@ def build_windows(defines, build_dir, msys2, cross, lovyangfx, log):
     Linux, and returns the path of the exe without extension"""
     env = tool_env([msys2])
     cmake = tool(msys2, "cmake")
-    configure = [cmake, "-S", ROOT, "-B", build_dir, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
+    configure = [cmake, "-S", os.path.join(PLATFORMS, "windows"), "-B", build_dir, "-G", "Ninja",
+             "-DCMAKE_BUILD_TYPE=Release"]
     if lovyangfx:
         # where LovyanGFX is, when it is not in the Arduino IDE's sketchbook the CMakeLists expects
         configure.append("-DLOVYANGFX_DIR=" + lovyangfx.replace(os.sep, "/"))
@@ -348,7 +351,7 @@ def build_playdate(defines, build_dir, msys2, sdk, arm, cross, log):
     the zipped pdx without extension. The playdate folder is copied into build_dir first: each build
     puts its pdex into Source/ there, so the pdx made last has both and the sources stay untouched"""
     project = os.path.join(build_dir, "playdate")
-    shutil.copytree(os.path.join(ROOT, "playdate"), project, ignore=shutil.ignore_patterns("pdex.*", "*.pdx"))
+    shutil.copytree(os.path.join(PLATFORMS, "playdate"), project, ignore=shutil.ignore_patterns("pdex.*", "*.pdx"))
     env = dict(os.environ)
     env["PLAYDATE_SDK_PATH"] = sdk
     env.update(tool_env([arm, msys2]))
@@ -380,7 +383,7 @@ def build_libretro(defines, build_dir, msys2, libretro_common, cross, log):
     returns the path of the zip without extension"""
     env = tool_env([msys2])
     cmake = tool(msys2, "cmake")
-    configure = [cmake, "-S", os.path.join(ROOT, "libretro"), "-B", build_dir, "-G", "Ninja",
+    configure = [cmake, "-S", os.path.join(PLATFORMS, "libretro"), "-B", build_dir, "-G", "Ninja",
                  "-DCMAKE_BUILD_TYPE=Release", "-DLIBRETRO_COMMON_DIR=" + libretro_common]
     configure += cross_settings(cross)
     configure += ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
@@ -419,7 +422,7 @@ def build_gba(defines, build_dir, msys2, devkitpro, log):
             settings.append("-DBUFFERINIWRAM=%d" % buffer_in_iwram)
         with open(log, "w") as f:
             failed = False
-            for command in ([cmake, "-S", os.path.join(ROOT, "gba"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+            for command in ([cmake, "-S", os.path.join(PLATFORMS, "gba"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
                 if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                     failed = True
                     break
@@ -444,7 +447,7 @@ def build_nds(defines, build_dir, msys2, devkitpro, log):
     shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir)
     with open(log, "w") as f:
-        for command in ([cmake, "-S", os.path.join(ROOT, "nds"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+        for command in ([cmake, "-S", os.path.join(PLATFORMS, "nds"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                 return None
     return os.path.join(build_dir, GAME)
@@ -460,7 +463,7 @@ def build_3ds(defines, build_dir, msys2, devkitpro, log):
     shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir)
     with open(log, "w") as f:
-        for command in ([cmake, "-S", os.path.join(ROOT, "3ds"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+        for command in ([cmake, "-S", os.path.join(PLATFORMS, "3ds"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                 return None
     return os.path.join(build_dir, GAME)
@@ -476,7 +479,7 @@ def build_psx(defines, build_dir, msys2, psn00bsdk, log):
     shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir)
     with open(log, "w") as f:
-        for command in ([cmake, "-S", os.path.join(ROOT, "psx"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+        for command in ([cmake, "-S", os.path.join(PLATFORMS, "psx"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                 return None
     return os.path.join(build_dir, GAME)
@@ -493,7 +496,7 @@ def build_dos(defines, build_dir, msys2, dosdev, log):
     shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir)
     with open(log, "w") as f:
-        for command in ([cmake, "-S", os.path.join(ROOT, "dos"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+        for command in ([cmake, "-S", os.path.join(PLATFORMS, "dos"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                 return None
     program = GAME.upper()[:8] + ".EXE"
@@ -516,7 +519,7 @@ def build_web(defines, build_dir, msys2, emsdk, log):
     shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir)
     with open(log, "w") as f:
-        for command in ([cmake, "-S", os.path.join(ROOT, "web"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+        for command in ([cmake, "-S", os.path.join(PLATFORMS, "web"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                 return None
     # itch.io opens the index.html at the root of the zip, the other two sit next to it
@@ -541,7 +544,7 @@ def build_n64(defines, build_dir, msys2, n64, log):
     shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir)
     with open(log, "w") as f:
-        for command in ([cmake, "-S", os.path.join(ROOT, "n64"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+        for command in ([cmake, "-S", os.path.join(PLATFORMS, "n64"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                 return None
     return os.path.join(build_dir, GAME)
@@ -551,7 +554,7 @@ def build_psp(defines, build_dir, pspdev, log):
     """Builds the PSP's EBOOT.PBP, returns the path of the build's files without extension. pspdev
     has no Windows toolchain, so on Windows the build runs in WSL and writes into the same folder"""
     settings = ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
-    source = os.path.join(ROOT, "psp")
+    source = os.path.join(PLATFORMS, "psp")
     if os.name == "nt":
         # WSL reaches the Windows drives under /mnt, and PSPDEV is where the toolchain was unpacked
         def wsl_path(path):
@@ -611,7 +614,7 @@ def build_vita(defines, build_dir, msys2, vitasdk, log):
     shutil.rmtree(build_dir, ignore_errors=True)
     os.makedirs(build_dir)
     with open(log, "w") as f:
-        for command in ([cmake, "-S", os.path.join(ROOT, "vita"), "-B", build_dir] + settings,
+        for command in ([cmake, "-S", os.path.join(PLATFORMS, "vita"), "-B", build_dir] + settings,
                         [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
                 return None

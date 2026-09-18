@@ -37,7 +37,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 
 # the game's folder, next to this one unless a build copies this folder somewhere else
-set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../source/znax_embedded" CACHE PATH "the game's source folder")
+set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../source/znax_embedded" CACHE PATH "the game's source folder")
 
 # where drawing goes, see SCREENBUFFER in PlatformPlaydate.h: 1, or 8 or 16 dithered
 set(SCREENBUFFER 1 CACHE STRING "SCREENBUFFER setting: 1, 8 or 16")
