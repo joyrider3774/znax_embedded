@@ -3,6 +3,13 @@
 
 Znax is a remake of a game by Nick Kouvaris. It is a sort of puzzle / arcade game where you as the player need to select 4 blocks of the same color as the corners of rectangles as big as you can. 
 
+## Screenshots
+The browser build, at twice the game's own 128x128:
+
+| Title screen | In game |
+| --- | --- |
+| ![Znax title screen](metadata/screenshots/title.png) | ![Znax in game](metadata/screenshots/ingame.png) |
+
 ## Devices
 Every [release](https://github.com/joyrider3774/znax_embedded/releases) has a build for every device. `releases/` is where a build of your own puts them, it is not part of the repository:
 
