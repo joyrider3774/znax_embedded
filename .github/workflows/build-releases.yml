@@ -139,11 +139,16 @@ jobs:
           export N64_INST="$HOME/toolchains/n64"
           export PATH="$N64_INST/bin:$PATH"
           make -C libdragon-src -j$(nproc) install
-          # -Wno-error: the host tools do not build warning free with the runner's gcc
-          make -C libdragon-src -j$(nproc) tools-install C_CXX_FLAGS="-O2 -pthread -Wall -Wno-error"
+          # Only the four tools the ROM is built with, not the ones for assets nobody here has.
+          # C_CXX_FLAGS on the command line replaces the whole variable instead of adding to it, so
+          # what the tools makefile puts in it is repeated here, with -Werror left off the end
+          make -C libdragon-src/tools -j$(nproc) \
+            n64tool-install n64sym-install n64elfcompress-install ed64romconfig-install \
+            INSTALLDIR="$N64_INST" \
+            C_CXX_FLAGS="-O2 -pthread -Wall -I../include -MMD -Wno-unused-result -Wno-sign-compare -Wno-error"
           rm -rf libdragon-src
           test -f n64/mips64-elf/lib/libdragon.a
-          test -x n64/bin/n64tool
+          for tool in n64tool n64sym n64elfcompress ed64romconfig; do test -x "n64/bin/$tool"; done
           echo "::endgroup::"
 
           echo "::group::arduino-cli"
