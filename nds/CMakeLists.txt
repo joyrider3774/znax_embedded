@@ -82,5 +82,5 @@ target_link_libraries(${GAME_NAME}.elf PRIVATE fat nds9 calico_ds9)
 add_custom_command(TARGET ${GAME_NAME}.elf POST_BUILD
     COMMAND ${NDSTOOL} -c ${GAME_NAME}.nds -9 ${GAME_NAME}.elf
             -7 "${DEVKITPRO}/calico/bin/ds7_maine.elf"
-            -b "${DEVKITPRO}/calico/share/nds-icon.bmp" "${NDS_TITLE};${NDS_SUBTITLE1};${NDS_SUBTITLE2}"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+            -b "${DEVKITPRO}/calico/share/nds-icon.bmp" "${NDS_TITLE}$<SEMICOLON>${NDS_SUBTITLE1}$<SEMICOLON>${NDS_SUBTITLE2}"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} VERBATIM)
