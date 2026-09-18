@@ -21,12 +21,13 @@ Every [release](https://github.com/joyrider3774/znax_embedded/releases) has a bu
 | [Game Boy Advance](https://en.wikipedia.org/wiki/Game_Boy_Advance) | GBA_Znax.gba | put it on a flash cart or open it in an emulator, the high scores are saved in the cartridge's SRAM |
 | [Nintendo DS](https://en.wikipedia.org/wiki/Nintendo_DS) | NDS_Znax.nds | put it on a flash card or open it in an emulator, the high scores are saved next to it in Znax.sav |
 | [Nintendo 3DS](https://en.wikipedia.org/wiki/Nintendo_3DS) | 3DS_Znax.3dsx | copy it into /3ds/ on the SD card and start it from the Homebrew Launcher, or open it in an emulator, the high scores are saved in sdmc:/3ds/Znax/ |
+| [Nintendo 64](https://en.wikipedia.org/wiki/Nintendo_64) | N64_Znax.z64 | put it on a flash cart or open it in an emulator, the high scores are saved in the cartridge EEPROM |
 | [PlayStation](https://en.wikipedia.org/wiki/PlayStation_(console)) | PSX_Znax.exe | open it in an emulator or send it to a console that runs unsigned code, the progress is not saved yet |
 | [PlayStation Portable](https://en.wikipedia.org/wiki/PlayStation_Portable) | PSP_Znax.PBP | rename it to EBOOT.PBP and put it in ms0:/PSP/GAME/Znax/ on the memory stick, or open it in PPSSPP |
 | [PlayStation Vita](https://en.wikipedia.org/wiki/PlayStation_Vita) | Vita_Znax.vpk | install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K |
 | Windows | Windows_Znax.exe | runs on its own, the high scores are saved next to it in Znax.sav |
 
-`python tools/build_releases.py` builds all of them, `python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes. The Playdate build also needs the Playdate SDK, see `playdate/CMakeLists.txt`, the libretro core libretro-common, see `libretro/CMakeLists.txt`, the Game Boy Advance build devkitARM and libgba, see `gba/CMakeLists.txt`, the Nintendo DS build devkitARM, libnds and calico, see `nds/CMakeLists.txt`, the Nintendo 3DS build devkitARM and libctru, see `3ds/CMakeLists.txt`, the PlayStation build PSn00bSDK, see `psx/CMakeLists.txt`, the PSP build the pspdev toolchain, see `psp/CMakeLists.txt` (pspdev has no Windows build, so on Windows it is built from WSL), and the Vita build VitaSDK, see `vita/CMakeLists.txt`.
+`python tools/build_releases.py` builds all of them, `python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes. The Playdate build also needs the Playdate SDK, see `playdate/CMakeLists.txt`, the libretro core libretro-common, see `libretro/CMakeLists.txt`, the Game Boy Advance build devkitARM and libgba, see `gba/CMakeLists.txt`, the Nintendo DS build devkitARM, libnds and calico, see `nds/CMakeLists.txt`, the Nintendo 3DS build devkitARM and libctru, see `3ds/CMakeLists.txt`, the PlayStation build PSn00bSDK, see `psx/CMakeLists.txt`, the Nintendo 64 build the mips64-elf toolchain and libdragon, see `n64/CMakeLists.txt`, the PSP build the pspdev toolchain, see `psp/CMakeLists.txt` (pspdev has no Windows build, so on Windows it is built from WSL), and the Vita build VitaSDK, see `vita/CMakeLists.txt`.
 
 ### Buttons
 The game's buttons on every device:
@@ -46,6 +47,7 @@ The game's buttons on every device:
 | Game Boy Advance | d-pad | A | B |
 | Nintendo DS | d-pad | A | B |
 | Nintendo 3DS | d-pad or circle pad | A | B |
+| Nintendo 64 | d-pad | A | B |
 | PlayStation | d-pad | Cross | Circle |
 | PlayStation Portable | d-pad or the analog stick | Cross | Circle |
 | PlayStation Vita | d-pad or the left stick | Cross | Circle |
@@ -62,6 +64,8 @@ The Game Boy Advance shows the game scaled to 160x160 in the middle of its scree
 On the Nintendo DS the game is scaled to 192x192 in the middle of the top screen, with black bars at the sides, and the bottom screen stays dark. What the game saves goes into Znax.sav on the card it was started from, so a card that libfat can not write to (or an emulator without one) plays the game but forgets it afterwards. Its tones are square waves played as a sample: the DS's own tone channels count their frequency in a 16 bit timer and can not go below about 256 Hz.
 
 On the Nintendo 3DS the game is scaled to 240x240 in the middle of the top screen, with black bars at the sides, and the bottom screen stays dark. What the game saves goes into sdmc:/3ds/Znax/Znax.sav. Its tones play through the console's DSP when the DSP firmware has been dumped to the SD card (sdmc:/3ds/dspfirm.cdc), and through CSND when it has not: on hardware either one plays, in an emulator only the DSP one does.
+
+On the Nintendo 64 the game is drawn into memory in the colours the RDP takes and the RDP shows it scaled to 240x240 in the middle of its 320x240 screen, with black bars at the sides. Its tones are a square wave written into the buffers the sound hardware plays from. The high scores are saved in the cartridge EEPROM, which the ROM says it has, so a cartridge or an emulator without one plays the game but forgets it afterwards.
 
 On the PlayStation the game is drawn into memory in the colours the GPU takes, handed to it as a texture and shown scaled to 240x240 in the middle of its 320x240 screen, with black bars at the sides. Its tones are a square wave the SPU plays from a single looping block. The memory card is not written yet, so what the game saves is gone when the console is switched off.
 

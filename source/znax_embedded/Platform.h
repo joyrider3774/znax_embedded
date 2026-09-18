@@ -48,6 +48,15 @@
 #define PLATFORM_DIRECT_FLASH 1
 #endif
 
+//Reads one pixel of an image. Images are byte arrays holding little endian RGB565, which on every
+//little endian device is the same as reading any other 16 bit value out of flash. A device that
+//reads 16 bit values the other way around (the Nintendo 64) defines this itself: there the values
+//the compiler put in flash, like the ones of a tune, and the bytes of an image are not the same
+//thing
+#ifndef PLATFORM_READ_PIXEL
+#define PLATFORM_READ_PIXEL(addr) PLATFORM_READ_WORD(addr)
+#endif
+
 // ===========================================================================
 // What the game supplies
 // ===========================================================================

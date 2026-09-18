@@ -18,6 +18,7 @@ Every file is named <device>_<game><variant>.<ext>, for example PicoSystem_Znax.
   NDS            .nds   a Nintendo DS card image, for an emulator or a flash card
   3DS            .3dsx  a Nintendo 3DS program, for an emulator or the Homebrew Launcher
   PSX            .exe   a PlayStation program, for an emulator or a console that runs one
+  N64            .z64   a Nintendo 64 ROM, for an emulator or a flash cart
   PSP            .PBP   copy it as EBOOT.PBP into ms0:/PSP/GAME/<game>/ on the memory stick, or open it in PPSSPP
   Vita           .vpk   install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K
 
@@ -29,7 +30,8 @@ Needs the Arduino IDE 1.8 folder with the board packages (arduino-builder) and, 
 build, MSYS2 with the mingw64 cmake, ninja, gcc and SDL2 packages. The Playdate build needs the Playdate
 SDK and the ARM gcc of its instructions, and MSYS2's gcc for the simulator's dll. The libretro core needs
 libretro-common (--libretro-common) and MSYS2's cmake, ninja and gcc. The GBA build needs devkitARM and
-libgba (--devkitpro), the DS build devkitARM, libnds and calico from the same folder and the 3DS build devkitARM and libctru, and the PlayStation build PSn00bSDK (--psn00bsdk).
+libgba (--devkitpro), the DS build devkitARM, libnds and calico from the same folder and the 3DS build devkitARM and libctru, and the PlayStation build PSn00bSDK (--psn00bsdk) and the Nintendo 64 build the mips64-elf
+toolchain with libdragon (--n64).
 
 Usage:
   python tools/build_releases.py                 build everything
@@ -54,6 +56,9 @@ Usage:
   --devkitpro DIR the folder with devkitARM, libgba, libnds, calico and tools (default DEVKITPRO, or C:/devkitarm)
   --pspdev DIR    the pspdev toolchain for the PSP (default PSPDEV_DIR, or C:/psp_dev)
   --vitasdk DIR   VitaSDK for the PlayStation Vita (default VITASDK, or C:/psvita_dev)
+  --psn00bsdk DIR the folder PSn00bSDK is installed in (default PSN00BSDK_PREFIX, or C:/psn00bsdk)
+  --n64 DIR       the folder with the mips64-elf toolchain and libdragon (default N64_INST, or
+                  C:/n64_dev)
 """
 import argparse
 import os
@@ -90,6 +95,7 @@ TARGETS = [
     ("NDS", "", {}),
     ("3DS", "", {}),
     ("PSX", "", {}),
+    ("N64", "", {}),
     ("PSP", "", {}),
     ("Vita", "", {}),
 ]
@@ -171,6 +177,11 @@ DEVICES = {
     "PSX": {
         "psx": True,
         "outputs": ["exe"],
+    },
+    # built from n64/, see build_n64
+    "N64": {
+        "n64": True,
+        "outputs": ["z64"],
     },
     # built from vita/, see build_vita
     "Vita": {
@@ -455,6 +466,22 @@ def build_psx(defines, build_dir, msys2, psn00bsdk, log):
     return os.path.join(build_dir, GAME)
 
 
+def build_n64(defines, build_dir, msys2, n64, log):
+    """Builds the Nintendo 64 ROM with CMake and ninja from MSYS2, returns the path of the ROM
+    without extension"""
+    env = tool_env([msys2])
+    cmake = tool(msys2, "cmake")
+    settings = ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DN64_INST=" + n64]
+    settings += ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
+    shutil.rmtree(build_dir, ignore_errors=True)
+    os.makedirs(build_dir)
+    with open(log, "w") as f:
+        for command in ([cmake, "-S", os.path.join(ROOT, "n64"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+            if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
+                return None
+    return os.path.join(build_dir, GAME)
+
+
 def build_psp(defines, build_dir, pspdev, log):
     """Builds the PSP's EBOOT.PBP, returns the path of the build's files without extension. pspdev
     has no Windows toolchain, so on Windows the build runs in WSL and writes into the same folder"""
@@ -552,6 +579,7 @@ def main():
     parser.add_argument("--playdate-sdk", default=os.environ.get("PLAYDATE_SDK_PATH", "C:/playdate/PlaydateSDK"))
     parser.add_argument("--devkitpro", default=os.environ.get("DEVKITPRO", "C:/devkitarm"))
     parser.add_argument("--psn00bsdk", default=os.environ.get("PSN00BSDK_PREFIX", "C:/psn00bsdk"))
+    parser.add_argument("--n64", default=os.environ.get("N64_INST", "C:/n64_dev"))
     parser.add_argument("--pspdev", default=os.environ.get("PSPDEV_DIR", "C:/psp_dev"))
     parser.add_argument("--vitasdk", default=os.environ.get("VITASDK", "C:/psvita_dev"))
     parser.add_argument("--libretro-common", default=os.environ.get("LIBRETRO_COMMON_DIR", "C:/github/libretro-common"))
@@ -604,6 +632,8 @@ def main():
             built = build_3ds(defines, build_dir, args.msys2, args.devkitpro, log)
         elif DEVICES[device].get("psx"):
             built = build_psx(defines, build_dir, args.msys2, args.psn00bsdk, log)
+        elif DEVICES[device].get("n64"):
+            built = build_n64(defines, build_dir, args.msys2, args.n64, log)
         elif DEVICES[device].get("libretro"):
             built = build_libretro(defines, build_dir, args.msys2, args.libretro_common, cross, log)
         elif DEVICES[device].get("playdate"):

@@ -45,6 +45,10 @@ env:
   # PSn00bSDK and the GCC it needs, both from its own release
   PSN00BSDK_VERSION: 0.24
   PSN00BSDK_GCC: gcc-mipsel-none-elf-12.3.0-linux.zip
+  # the Nintendo 64: libdragon publishes the mips64-elf toolchain it builds with, libdragon itself
+  # has no releases of its own and is built here from the commit it is pinned to
+  LIBDRAGON_TOOLCHAIN: gcc-toolchain-mips64-x86_64.deb
+  LIBDRAGON_COMMIT: e356bf3f56f7afbf7e5246329562f145965cfdfc
   # devkitARM, libgba, libnds and libctru come from a repack of devkitPro's gba-dev, nds-dev and
   # 3ds-dev packages on joyrider3774/sdks: pkg.devkitpro.org answers runners with 403 too often
   DEVKITPRO_RELEASE: v1.0
@@ -119,6 +123,29 @@ jobs:
           test -f psn00bsdk/lib/libpsn00b/cmake/sdk.cmake
           echo "::endgroup::"
 
+          echo "::group::libdragon for the Nintendo 64"
+          # the mips64-elf toolchain out of libdragon's own release, whatever prefix the .deb uses
+          curl -sSfL --retry 5 -o libdragon-gcc.deb \
+            https://github.com/DragonMinded/libdragon/releases/download/toolchain-continuous-prerelease/${LIBDRAGON_TOOLCHAIN}
+          dpkg-deb -x libdragon-gcc.deb libdragon-deb
+          gcc_dir=$(dirname "$(dirname "$(find libdragon-deb -type f -name mips64-elf-gcc | head -1)")")
+          mkdir -p n64 && cp -a "$gcc_dir"/. n64/
+          rm -rf libdragon-deb libdragon-gcc.deb
+          # libdragon itself: its library, its headers and the tools that build the ROM
+          git init -q libdragon-src
+          git -C libdragon-src remote add origin https://github.com/DragonMinded/libdragon.git
+          git -C libdragon-src fetch -q --depth 1 origin ${LIBDRAGON_COMMIT}
+          git -C libdragon-src checkout -q FETCH_HEAD
+          export N64_INST="$HOME/toolchains/n64"
+          export PATH="$N64_INST/bin:$PATH"
+          make -C libdragon-src -j$(nproc) install
+          # -Wno-error: the host tools do not build warning free with the runner's gcc
+          make -C libdragon-src -j$(nproc) tools-install C_CXX_FLAGS="-O2 -pthread -Wall -Wno-error"
+          rm -rf libdragon-src
+          test -f n64/mips64-elf/lib/libdragon.a
+          test -x n64/bin/n64tool
+          echo "::endgroup::"
+
           echo "::group::arduino-cli"
           curl -sL -o arduino-cli.tar.gz \
             https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz
@@ -183,6 +210,7 @@ jobs:
             --playdate-arm /usr/bin \
             --devkitpro /opt/devkitpro \
             --psn00bsdk "$HOME/toolchains/psn00bsdk" \
+            --n64 "$HOME/toolchains/n64" \
             --pspdev "$HOME/toolchains/pspdev" \
             --vitasdk "$HOME/toolchains/vitasdk" \
             --libretro-common "$HOME/toolchains/libretro-common" \
