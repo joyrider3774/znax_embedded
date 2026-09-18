@@ -50,11 +50,6 @@ env:
   DEVKITPRO_RELEASE: v1.0
   DEVKITPRO_ASSET: devkitpro-gba-nds-3ds-dev-linux-x86_64-r68.tar.xz
   DEVKITPRO_SHA256: 29506cb5ed1a57b89bc8589d3747caf94957128605afe1c9617f029d0cef0f69
-  # devkitARM, libgba, libnds and libctru come from a repack of devkitPro's gba-dev, nds-dev and
-  # 3ds-dev packages on joyrider3774/sdks: pkg.devkitpro.org answers runners with 403 too often
-  DEVKITPRO_RELEASE: v1.0
-  DEVKITPRO_ASSET: devkitpro-gba-nds-3ds-dev-linux-x86_64-r68.tar.xz
-  DEVKITPRO_SHA256: 29506cb5ed1a57b89bc8589d3747caf94957128605afe1c9617f029d0cef0f69
 
 jobs:
   build:
