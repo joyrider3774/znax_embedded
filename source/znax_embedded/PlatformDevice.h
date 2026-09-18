@@ -7,11 +7,14 @@
 
 //The Windows build (CMakeLists.txt) defines PLATFORM_SDL, the Playdate build (playdate/CMakeLists.txt)
 //PLATFORM_PLAYDATE, the libretro core (libretro/CMakeLists.txt) PLATFORM_LIBRETRO and the Game Boy Advance
-//build (gba/CMakeLists.txt) PLATFORM_GBA and the PlayStation Portable build (psp/CMakeLists.txt)
+//build (gba/CMakeLists.txt) PLATFORM_GBA and the Nintendo DS build (nds/CMakeLists.txt) PLATFORM_NDS and the
+//Nintendo 3DS build (3ds/CMakeLists.txt) PLATFORM_3DS and the PlayStation build
+//(psx/CMakeLists.txt) PLATFORM_PSX
+//and the PlayStation Portable build (psp/CMakeLists.txt)
 //PLATFORM_PSP and the PlayStation Vita build (vita/CMakeLists.txt) PLATFORM_VITA,
 //an Arduino build is picked from the defines the board package of the board selected in the IDE sets.
 //A build can still define one of the PLATFORM_ names itself, then nothing is detected
-#if !defined(PLATFORM_SDL) && !defined(PLATFORM_PLAYDATE) && !defined(PLATFORM_LIBRETRO) && !defined(PLATFORM_GBA) && !defined(PLATFORM_PSP) && !defined(PLATFORM_VITA) && !defined(PLATFORM_GAMEBUINO) && !defined(PLATFORM_ESPBOY) && !defined(PLATFORM_PYBADGE) && !defined(PLATFORM_PICOSYSTEM) && !defined(PLATFORM_EXPLORER) && !defined(PLATFORM_TUFTY) && !defined(PLATFORM_THUMBY)
+#if !defined(PLATFORM_SDL) && !defined(PLATFORM_PLAYDATE) && !defined(PLATFORM_LIBRETRO) && !defined(PLATFORM_GBA) && !defined(PLATFORM_NDS) && !defined(PLATFORM_3DS) && !defined(PLATFORM_PSX) && !defined(PLATFORM_PSP) && !defined(PLATFORM_VITA) && !defined(PLATFORM_GAMEBUINO) && !defined(PLATFORM_ESPBOY) && !defined(PLATFORM_PYBADGE) && !defined(PLATFORM_PICOSYSTEM) && !defined(PLATFORM_EXPLORER) && !defined(PLATFORM_TUFTY) && !defined(PLATFORM_THUMBY)
   #if defined(ADAFRUIT_PYBADGE_M4_EXPRESS) || defined(ADAFRUIT_PYGAMER_M4_EXPRESS)
     //Adafruit's board package, the PyGamer builds the same code with its joystick as the d-pad
     #define PLATFORM_PYBADGE 1
@@ -67,6 +70,12 @@
 #include "PlatformLibretro.h"
 #elif defined(PLATFORM_GBA)
 #include "PlatformGBA.h"
+#elif defined(PLATFORM_NDS)
+#include "PlatformNDS.h"
+#elif defined(PLATFORM_3DS)
+#include "Platform3DS.h"
+#elif defined(PLATFORM_PSX)
+#include "PlatformPSX.h"
 #elif defined(PLATFORM_PSP)
 #include "PlatformPSP.h"
 #elif defined(PLATFORM_VITA)
