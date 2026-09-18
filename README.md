@@ -26,8 +26,10 @@ Every [release](https://github.com/joyrider3774/znax_embedded/releases) has a bu
 | [PlayStation Portable](https://en.wikipedia.org/wiki/PlayStation_Portable) | PSP_Znax.PBP | rename it to EBOOT.PBP and put it in ms0:/PSP/GAME/Znax/ on the memory stick, or open it in PPSSPP |
 | [PlayStation Vita](https://en.wikipedia.org/wiki/PlayStation_Vita) | Vita_Znax.vpk | install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K |
 | Windows | Windows_Znax.exe | runs on its own, the high scores are saved next to it in Znax.sav |
+| MS-DOS | DOS_Znax.zip | unzip ZNAX.EXE onto a DOS machine or into DOSBox and run it, the high scores are saved next to it in ZNAX.SAV |
+| Browser | Web_Znax.zip | upload it to an itch.io HTML project, or unzip it and open index.html from a web server, the high scores are saved in the browser |
 
-`python tools/build_releases.py` builds all of them, `python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes. The Playdate build also needs the Playdate SDK, see `playdate/CMakeLists.txt`, the libretro core libretro-common, see `libretro/CMakeLists.txt`, the Game Boy Advance build devkitARM and libgba, see `gba/CMakeLists.txt`, the Nintendo DS build devkitARM, libnds and calico, see `nds/CMakeLists.txt`, the Nintendo 3DS build devkitARM and libctru, see `3ds/CMakeLists.txt`, the PlayStation build PSn00bSDK, see `psx/CMakeLists.txt`, the Nintendo 64 build the mips64-elf toolchain and libdragon, see `n64/CMakeLists.txt`, the PSP build the pspdev toolchain, see `psp/CMakeLists.txt` (pspdev has no Windows build, so on Windows it is built from WSL), and the Vita build VitaSDK, see `vita/CMakeLists.txt`.
+`python tools/build_releases.py` builds all of them, `python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes. The Playdate build also needs the Playdate SDK, see `playdate/CMakeLists.txt`, the libretro core libretro-common, see `libretro/CMakeLists.txt`, the Game Boy Advance build devkitARM and libgba, see `gba/CMakeLists.txt`, the Nintendo DS build devkitARM, libnds and calico, see `nds/CMakeLists.txt`, the Nintendo 3DS build devkitARM and libctru, see `3ds/CMakeLists.txt`, the PlayStation build PSn00bSDK, see `psx/CMakeLists.txt`, the Nintendo 64 build the mips64-elf toolchain and libdragon, see `n64/CMakeLists.txt`, the PSP build the pspdev toolchain, see `psp/CMakeLists.txt` (pspdev has no Windows build, so on Windows it is built from WSL), and the Vita build VitaSDK, see `vita/CMakeLists.txt`, the browser build Emscripten, see `web/CMakeLists.txt`, and the MS-DOS build DJGPP, see `dos/CMakeLists.txt`.
 
 ### Buttons
 The game's buttons on every device:
@@ -52,6 +54,8 @@ The game's buttons on every device:
 | PlayStation Portable | d-pad or the analog stick | Cross | Circle |
 | PlayStation Vita | d-pad or the left stick | Cross | Circle |
 | Windows | arrow keys | X | C |
+| MS-DOS | arrow keys | X | C |
+| Browser | arrow keys | X | C |
 
 On the Tufty 2350 a tap of HOME is B when it is let go. It has no speaker, the game is silent there. Holding RESET until the rear LEDs are dark puts it to sleep, a front button wakes it up again, with UP and DOWN held as well it goes into shipping mode instead.
 
@@ -64,6 +68,10 @@ The Game Boy Advance shows the game scaled to 160x160 in the middle of its scree
 On the Nintendo DS the game is scaled to 192x192 in the middle of the top screen, with black bars at the sides, and the bottom screen stays dark. What the game saves goes into Znax.sav on the card it was started from, so a card that libfat can not write to (or an emulator without one) plays the game but forgets it afterwards. Its tones are square waves played as a sample: the DS's own tone channels count their frequency in a 16 bit timer and can not go below about 256 Hz.
 
 On the Nintendo 3DS the game is scaled to 240x240 in the middle of the top screen, with black bars at the sides, and the bottom screen stays dark. What the game saves goes into sdmc:/3ds/Znax/Znax.sav. Its tones play through the console's DSP when the DSP firmware has been dumped to the SD card (sdmc:/3ds/dspfirm.cdc), and through CSND when it has not: on hardware either one plays, in an emulator only the DSP one does.
+
+On MS-DOS the game runs in VGA mode X, 320x240 in 256 colours, blown up to 240x240 in the middle of the screen with black bars at the sides. That mode rather than the usual 320x200 one because its pixels are square, where 320x200 is stretched over the same screen and would show the game a fifth too tall. The 256 colours are set to the RGB332 cube, which is exactly what the game's 8 bpp screen buffer holds, so a frame reaches the card without a colour being worked out. Its tones are a square wave on the PC speaker, the high scores are saved next to the program in ZNAX.SAV, and Escape quits. The program is 32 bit and carries the CWSDPMI host inside it, so it needs nothing beside it on the disk.
+
+In a browser the game is drawn into a canvas of its own 128x128 pixels, which the page stretches to whatever room it is given while keeping it square and keeping the pixels sharp. The high scores are saved in the browser's localStorage under the game's name, so a private window plays it but forgets it afterwards. The zip holds index.html, index.js and index.wasm and is what an itch.io HTML project takes as it is.
 
 On the Nintendo 64 the game is drawn into memory in the colours the RDP takes and the RDP shows it scaled to 240x240 in the middle of its 320x240 screen, with black bars at the sides. Its tones are a square wave written into the buffers the sound hardware plays from. The high scores are saved in the cartridge EEPROM, which the ROM says it has, so a cartridge or an emulator without one plays the game but forgets it afterwards.
 

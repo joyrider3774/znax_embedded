@@ -47,6 +47,12 @@ env:
   PSN00BSDK_GCC: gcc-mipsel-none-elf-12.3.0-linux.zip
   # the Nintendo 64: libdragon publishes the mips64-elf toolchain it builds with, libdragon itself
   # has no releases of its own and is built here from the commit it is pinned to
+  # DJGPP and the DPMI host it needs for the MS-DOS build
+  DJGPP_RELEASE: v3.4
+  DJGPP_ASSET: djgpp-linux64-gcc1220.tar.bz2
+  CWSDPMI_URL: http://www.delorie.com/pub/djgpp/current/v2misc/csdpmi7b.zip
+  # Emscripten for the browser build, pinned the same way as the rest
+  EMSDK_VERSION: 6.0.4
   LIBDRAGON_TOOLCHAIN: gcc-toolchain-mips64-x86_64.deb
   LIBDRAGON_COMMIT: e356bf3f56f7afbf7e5246329562f145965cfdfc
   # devkitARM, libgba, libnds and libctru come from a repack of devkitPro's gba-dev, nds-dev and
@@ -151,6 +157,25 @@ jobs:
           for tool in n64tool n64sym n64elfcompress ed64romconfig; do test -x "n64/bin/$tool"; done
           echo "::endgroup::"
 
+          echo "::group::DJGPP for MS-DOS"
+          curl -sSfL --retry 5 -o djgpp.tar.bz2 \
+            https://github.com/andrewwutw/build-djgpp/releases/download/${DJGPP_RELEASE}/${DJGPP_ASSET}
+          mkdir -p dos_dev
+          tar -xjf djgpp.tar.bz2 -C dos_dev && rm djgpp.tar.bz2
+          # CWSDPMI is the DPMI host that is built into the program, so it needs nothing beside it
+          curl -sSfL --retry 5 -o csdpmi.zip "${CWSDPMI_URL}"
+          unzip -q -o csdpmi.zip -d dos_dev/csdpmi && rm csdpmi.zip
+          test -x dos_dev/djgpp/bin/i586-pc-msdosdjgpp-g++
+          test -f dos_dev/csdpmi/bin/CWSDSTUB.EXE
+          echo "::endgroup::"
+
+          echo "::group::Emscripten"
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git emsdk
+          ./emsdk/emsdk install ${EMSDK_VERSION}
+          ./emsdk/emsdk activate ${EMSDK_VERSION}
+          test -x emsdk/upstream/emscripten/emcc
+          echo "::endgroup::"
+
           echo "::group::arduino-cli"
           curl -sL -o arduino-cli.tar.gz \
             https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz
@@ -208,6 +233,8 @@ jobs:
       # ------------------------------------------------------------------ the builds
       - name: Build every device
         run: |
+          # emcc finds its own config and node through this, the browser build needs both
+          source "$HOME/toolchains/emsdk/emsdk_env.sh"
           python3 tools/build_releases.py \
             --arduino-cli "$HOME/toolchains/bin/arduino-cli" \
             --msys2 "" \
@@ -216,6 +243,8 @@ jobs:
             --devkitpro /opt/devkitpro \
             --psn00bsdk "$HOME/toolchains/psn00bsdk" \
             --n64 "$HOME/toolchains/n64" \
+            --emsdk "$HOME/toolchains/emsdk" \
+            --dosdev "$HOME/toolchains/dos_dev" \
             --pspdev "$HOME/toolchains/pspdev" \
             --vitasdk "$HOME/toolchains/vitasdk" \
             --libretro-common "$HOME/toolchains/libretro-common" \

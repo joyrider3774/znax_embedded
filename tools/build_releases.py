@@ -12,6 +12,8 @@ Every file is named <device>_<game><variant>.<ext>, for example PicoSystem_Znax.
   Tufty          .uf2   hold HOME while pressing RESET and copy it onto the drive that appears
   ThumbyColor   .uf2   put it into bootloader mode and copy it onto the RPI-RP2 drive that appears
   Windows        .exe   linked statically, it runs on its own without a console window
+  Web            .zip   index.html, .js and .wasm, ready to upload to an itch.io HTML project
+  DOS            .zip   a 32 bit MS-DOS program with its DPMI host built in, for DOSBox or a real PC
   Playdate       .pdx.zip  unzip it and sideload the .pdx, it runs on the device and in the simulator
   Libretro       .zip   the core (<game>_libretro.dll) and its .info for RetroArch's cores and info folders
   GBA            .gba   a Game Boy Advance ROM, for an emulator or a flash cart
@@ -59,6 +61,8 @@ Usage:
   --psn00bsdk DIR the folder PSn00bSDK is installed in (default PSN00BSDK_PREFIX, or C:/psn00bsdk)
   --n64 DIR       the folder with the mips64-elf toolchain and libdragon (default N64_INST, or
                   C:/n64_dev)
+  --emsdk DIR     the Emscripten SDK for the browser build (default EMSDK, or C:/github/emsdk)
+  --dosdev DIR    DJGPP and CWSDPMI for the MS-DOS build (default DOSDEV, or C:/dos_dev)
 """
 import argparse
 import os
@@ -89,6 +93,8 @@ TARGETS = [
     ("Tufty", "", {}),
     ("ThumbyColor", "", {}),
     ("Windows", "", {}),
+    ("Web", "", {}),
+    ("DOS", "", {}),
     ("Playdate", "", {}),
     ("Libretro", "", {}),
     ("GBA", "", {}),
@@ -182,6 +188,16 @@ DEVICES = {
     "N64": {
         "n64": True,
         "outputs": ["z64"],
+    },
+    # built from web/, see build_web
+    "Web": {
+        "web": True,
+        "outputs": ["zip"],
+    },
+    # built from dos/, see build_dos
+    "DOS": {
+        "dos": True,
+        "outputs": ["zip"],
     },
     # built from vita/, see build_vita
     "Vita": {
@@ -466,6 +482,55 @@ def build_psx(defines, build_dir, msys2, psn00bsdk, log):
     return os.path.join(build_dir, GAME)
 
 
+def build_dos(defines, build_dir, msys2, dosdev, log):
+    """Builds the MS-DOS program with DJGPP and zips it, returns the path of the zip without
+    extension. It is zipped rather than released on its own because DOS only takes eight characters
+    and three, and the name the release files carry is longer than that"""
+    env = tool_env([msys2])
+    cmake = tool(msys2, "cmake")
+    settings = ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DDOSDEV=" + dosdev]
+    settings += ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
+    shutil.rmtree(build_dir, ignore_errors=True)
+    os.makedirs(build_dir)
+    with open(log, "w") as f:
+        for command in ([cmake, "-S", os.path.join(ROOT, "dos"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+            if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
+                return None
+    program = GAME.upper()[:8] + ".EXE"
+    if not os.path.isfile(os.path.join(build_dir, program)):
+        return None
+    package = os.path.join(build_dir, "package")
+    os.makedirs(package)
+    shutil.copyfile(os.path.join(build_dir, program), os.path.join(package, program))
+    shutil.make_archive(os.path.join(build_dir, "dos"), "zip", root_dir=package)
+    return os.path.join(build_dir, "dos")
+
+
+def build_web(defines, build_dir, msys2, emsdk, log):
+    """Builds the browser version with Emscripten and zips the three files an itch.io HTML project
+    takes, returns the path of the zip without extension"""
+    env = tool_env([msys2])
+    cmake = tool(msys2, "cmake")
+    settings = ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DEMSDK=" + emsdk]
+    settings += ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
+    shutil.rmtree(build_dir, ignore_errors=True)
+    os.makedirs(build_dir)
+    with open(log, "w") as f:
+        for command in ([cmake, "-S", os.path.join(ROOT, "web"), "-B", build_dir] + settings, [cmake, "--build", build_dir]):
+            if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
+                return None
+    # itch.io opens the index.html at the root of the zip, the other two sit next to it
+    files = ["index.html", "index.js", "index.wasm"]
+    if not all(os.path.isfile(os.path.join(build_dir, name)) for name in files):
+        return None
+    package = os.path.join(build_dir, "package")
+    os.makedirs(package)
+    for name in files:
+        shutil.copyfile(os.path.join(build_dir, name), os.path.join(package, name))
+    shutil.make_archive(os.path.join(build_dir, "web"), "zip", root_dir=package)
+    return os.path.join(build_dir, "web")
+
+
 def build_n64(defines, build_dir, msys2, n64, log):
     """Builds the Nintendo 64 ROM with CMake and ninja from MSYS2, returns the path of the ROM
     without extension"""
@@ -580,6 +645,8 @@ def main():
     parser.add_argument("--devkitpro", default=os.environ.get("DEVKITPRO", "C:/devkitarm"))
     parser.add_argument("--psn00bsdk", default=os.environ.get("PSN00BSDK_PREFIX", "C:/psn00bsdk"))
     parser.add_argument("--n64", default=os.environ.get("N64_INST", "C:/n64_dev"))
+    parser.add_argument("--emsdk", default=os.environ.get("EMSDK", "C:/github/emsdk"))
+    parser.add_argument("--dosdev", default=os.environ.get("DOSDEV", "C:/dos_dev"))
     parser.add_argument("--pspdev", default=os.environ.get("PSPDEV_DIR", "C:/psp_dev"))
     parser.add_argument("--vitasdk", default=os.environ.get("VITASDK", "C:/psvita_dev"))
     parser.add_argument("--libretro-common", default=os.environ.get("LIBRETRO_COMMON_DIR", "C:/github/libretro-common"))
@@ -634,6 +701,10 @@ def main():
             built = build_psx(defines, build_dir, args.msys2, args.psn00bsdk, log)
         elif DEVICES[device].get("n64"):
             built = build_n64(defines, build_dir, args.msys2, args.n64, log)
+        elif DEVICES[device].get("web"):
+            built = build_web(defines, build_dir, args.msys2, args.emsdk, log)
+        elif DEVICES[device].get("dos"):
+            built = build_dos(defines, build_dir, args.msys2, args.dosdev, log)
         elif DEVICES[device].get("libretro"):
             built = build_libretro(defines, build_dir, args.msys2, args.libretro_common, cross, log)
         elif DEVICES[device].get("playdate"):
