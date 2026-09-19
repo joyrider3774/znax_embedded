@@ -121,6 +121,35 @@ On the PlayStation Vita the game is blown up four times to 512x512 in the middle
 `python tools/build_releases.py` builds a release for every device  
 `python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes
 
+### Where the tools are
+The script looks for everything in the place it is installed in here. A tool somewhere else is passed on the command line, or set as the environment variable in the last column and left off the command line:
+
+| Option | What it points at | Default, or environment variable |
+| ------ | ----------------- | -------------------------------- |
+| `--arduino-cli PATH` | arduino-cli, which builds the Arduino devices | `ARDUINO_CLI` |
+| `--arduino DIR` | the Arduino IDE 1.8 folder, used when there is no arduino-cli | `C:/arduino`, `ARDUINO_DIR` |
+| `--lovyangfx DIR` | LovyanGFX for the Windows build, when it is not the one in the sketchbook | `LOVYANGFX_DIR` |
+| `--msys2 DIR` | MSYS2's mingw64 bin folder, for cmake and ninja | `C:/msys64/mingw64/bin`, `MSYS2_BIN` |
+| `--playdate-sdk DIR` | the Playdate SDK | `C:/playdate/PlaydateSDK`, `PLAYDATE_SDK_PATH` |
+| `--playdate-arm DIR` | the bin folder of the ARM gcc the Playdate needs | `PLAYDATE_ARM_BIN` |
+| `--libretro-common DIR` | libretro-common | `C:/github/libretro-common`, `LIBRETRO_COMMON_DIR` |
+| `--devkitpro DIR` | devkitARM with libgba, libnds, calico, libctru and tools | `C:/devkitarm`, `DEVKITPRO` |
+| `--psn00bsdk DIR` | PSn00bSDK | `C:/psn00bsdk`, `PSN00BSDK_PREFIX` |
+| `--n64 DIR` | the mips64-elf toolchain with libdragon | `C:/n64_dev`, `N64_INST` |
+| `--emsdk DIR` | the Emscripten SDK | `C:/github/emsdk`, `EMSDK` |
+| `--dosdev DIR` | DJGPP with CWSDPMI | `C:/dos_dev`, `DOSDEV` |
+| `--pspdev DIR` | the pspdev toolchain | `C:/psp_dev`, `PSPDEV_DIR` |
+| `--vitasdk DIR` | VitaSDK | `C:/psvita_dev`, `VITASDK` |
+| `--sdl2-mingw DIR` | SDL2's mingw package, its x86_64-w64-mingw32 folder | `SDL2_MINGW` |
+
+Only the devices being built need their tool, so one missing toolchain does not stop the rest:
+
+```
+python tools/build_releases.py --only N64 DOS --n64 D:/n64_dev --dosdev D:/dos_dev
+python tools/build_releases.py --list          shows what would be built
+python tools/build_releases.py --only Web      one device only
+```
+
 ### Board packages and libraries
 The Arduino devices are built with arduino-cli 1.5.1 and the versions below. They are the ones every release is built with, `.github/workflows/build-releases.yml` pins them:
 
