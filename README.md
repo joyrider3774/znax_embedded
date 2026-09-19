@@ -117,7 +117,8 @@ On the PlayStation Portable the game is doubled to 256x256 in the middle of the 
 
 On the PlayStation Vita the game is blown up four times to 512x512 in the middle of the display, and the high scores are saved in ux0:data/Znax/Znax.sav.
 
-`python tools/build_releases.py` builds all of them  
+## Building
+`python tools/build_releases.py` builds a release for every device  
 `python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes  
 The Playdate build also needs the Playdate SDK, see `platforms/playdate/CMakeLists.txt`  
 The libretro core needs libretro-common, see `platforms/libretro/CMakeLists.txt`  
