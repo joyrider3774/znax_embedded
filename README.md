@@ -119,7 +119,23 @@ On the PlayStation Vita the game is blown up four times to 512x512 in the middle
 
 ## Building
 `python tools/build_releases.py` builds a release for every device  
-`python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes  
+`python tools/convert_skins.py` turns the images in `assets/skins` into the headers the game includes
+
+### Board packages and libraries
+The Arduino devices are built with arduino-cli 1.5.1 and the versions below. They are the ones every release is built with, `.github/workflows/build-releases.yml` pins them:
+
+| Device | Board package | Libraries |
+| ------ | ------------- | --------- |
+| ESPboy | esp8266:esp8266 3.1.2 | LovyanGFX 1.1.9, TFT_eSPI 2.4.72 |
+| Gamebuino META | gamebuino:samd 1.2.2 | Gamebuino META 1.3.3 |
+| Adafruit PyBadge, PyGamer | adafruit:samd 1.7.16 | Adafruit GFX Library 1.12.6, Adafruit ST7735 and ST7789 Library 1.5.15, Adafruit BusIO 1.17.4, Adafruit NeoPixel 1.15.5, Adafruit SPIFlash 5.1.1 |
+| PicoSystem, Explorer, Tufty 2350, Thumby Color | rp2040:rp2040 5.5.0 | none, everything they use comes with the core |
+
+The ESPboy draws through LovyanGFX and only includes TFT_eSPI's header, so the exact TFT_eSPI does not matter much.  
+The Gamebuino's core needs Arduino's own arduino:samd 1.8.14 beside it for sam.h, without it the build stops at "sam.h: No such file or directory".  
+The Windows build draws through the same LovyanGFX 1.1.9, see `platforms/windows/CMakeLists.txt`.
+
+### Toolchains
 The Playdate build also needs the Playdate SDK, see `platforms/playdate/CMakeLists.txt`  
 The libretro core needs libretro-common, see `platforms/libretro/CMakeLists.txt`  
 The Game Boy Advance build needs devkitARM and libgba, see `platforms/gba/CMakeLists.txt`  
