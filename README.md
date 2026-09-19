@@ -150,6 +150,25 @@ python tools/build_releases.py --list          shows what would be built
 python tools/build_releases.py --only Web      one device only
 ```
 
+### Build settings
+Every device is built with its own settings. These change them for all of the devices at once, and `--list` shows what the defines would be without building anything. They are the same defines the device headers and the `platforms/*/CMakeLists.txt` files take, so a single device can be built with `-D<name>=<value>` from cmake instead:
+
+| Option | What it sets | Values |
+| ------ | ------------ | ------ |
+| `--forceskin N` | `FORCESKIN`, the skin built in | `-1`, or `0` to `1` |
+| `--forcescreenbuffer N` | `SCREENBUFFER`, where drawing goes | `0`, `1`, `8` or `16` bits per pixel |
+| `--forcedebug` | `FORCEDEBUG 1`, the debug header is always shown | no value, on when it is given |
+
+`-1` is the default skin, or the black and white one with a 1 bpp buffer. There is no skin option in the game, so only the skin that is used is built in and `--forceskin` is what picks it.
+
+Not every device takes every buffer mode, `platforms/<device>/CMakeLists.txt` says which, and one it does not take stops that build with a message. A 1 bpp buffer can only show the one skin that is black and white, so it forces that skin whatever `--forceskin` says, see `FORCESKIN` in `defines.h`.
+
+```
+python tools/build_releases.py --forceskin 1                only skin 1, on every device
+python tools/build_releases.py --only Windows --forcescreenbuffer 1
+python tools/build_releases.py --list --forcedebug          what the defines would be
+```
+
 ### Board packages and libraries
 The Arduino devices are built with arduino-cli 1.5.1 and the versions below. They are the ones every release is built with, `.github/workflows/build-releases.yml` pins them:
 

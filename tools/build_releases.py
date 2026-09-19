@@ -39,6 +39,8 @@ Usage:
   python tools/build_releases.py                 build everything
   python tools/build_releases.py --only PicoSystem GamebuinoMeta
   python tools/build_releases.py --forcedebug    every build shows the debug header (FORCEDEBUG 1)
+  python tools/build_releases.py --forceskin 1   every build has only skin 1
+  python tools/build_releases.py --forcescreenbuffer 8   every build draws into an 8 bpp buffer
   python tools/build_releases.py --list          show what would be built
 
   --arduino DIR   the Arduino IDE folder (default C:/arduino, or the ARDUINO_DIR environment variable)
@@ -81,6 +83,9 @@ import time
 GAME = "Znax"
 SKETCH = "znax_embedded"
 CMAKE_TARGET = "znax"
+
+# how many skins the game has, so --forceskin takes -1 or 0 to SKINS - 1. See FORCESKIN in defines.h
+SKINS = 2
 
 # (device, variant added to the file name, defines)
 TARGETS = [
@@ -631,6 +636,12 @@ def main():
     parser = argparse.ArgumentParser(description="Build every device's release files into releases/")
     parser.add_argument("--only", nargs="+", metavar="DEVICE", help="only these devices: " + ", ".join(DEVICES))
     parser.add_argument("--forcedebug", action="store_true", help="show the debug header in every build")
+    parser.add_argument("--forceskin", type=int, metavar="N", choices=range(-1, SKINS),
+                        help="build every device with skin N: -1 is what the game does on its own, "
+                             "0 to %d only that skin (see FORCESKIN in defines.h)" % (SKINS - 1))
+    parser.add_argument("--forcescreenbuffer", type=int, metavar="N", choices=(0, 1, 8, 16),
+                        help="build every device with SCREENBUFFER N: 0, 1, 8 or 16. Not every device "
+                             "takes every mode, its CMakeLists.txt says which")
     parser.add_argument("--list", action="store_true", help="list the builds and exit")
     parser.add_argument("--arduino", default=os.environ.get("ARDUINO_DIR", "C:/arduino"))
     parser.add_argument("--arduino-cli", default=os.environ.get("ARDUINO_CLI", ""),
@@ -670,7 +681,18 @@ def main():
             parser.error("unknown device %s, the devices are %s" % (", ".join(unknown), ", ".join(DEVICES)))
         only = {names[d.lower()] for d in args.only}
 
-    targets = [t for t in TARGETS if only is None or t[0] in only]
+    # the settings that change every build. They win over a device's own defines above, and --list
+    # shows them because they are folded in here rather than when a build starts
+    overrides = {}
+    if args.forcedebug:
+        overrides["FORCEDEBUG"] = 1
+    if args.forceskin is not None:
+        overrides["FORCESKIN"] = args.forceskin
+    if args.forcescreenbuffer is not None:
+        overrides["SCREENBUFFER"] = args.forcescreenbuffer
+
+    targets = [(device, variant, dict(defines, **overrides)) for device, variant, defines in TARGETS
+               if only is None or device in only]
     if args.list:
         for device, variant, defines in targets:
             outs = [o.split()[0] for o in DEVICES[device]["outputs"]]
@@ -681,9 +703,6 @@ def main():
     os.makedirs(WORK, exist_ok=True)
     failed = []
     for device, variant, defines in targets:
-        defines = dict(defines)
-        if args.forcedebug:
-            defines["FORCEDEBUG"] = 1
         tag = "%s%s" % (device, variant)
         build_dir = os.path.join(WORK, tag)
         log = os.path.join(WORK, tag + ".log")
