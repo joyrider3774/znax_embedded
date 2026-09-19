@@ -64,6 +64,12 @@ if(TOOLCHAIN STREQUAL "armgcc")
     # the C++ runtime refers to newlib's system calls (_write, _exit, ...), the Playdate has none of
     # them: nosys gives them stubs that do nothing
     target_link_options(${GAME_TARGET} PRIVATE --specs=nosys.specs)
+    # pdc builds the image it relocates by pasting the elf's LOAD segments together, which drops the gap
+    # the linker leaves between the end of .text and the 8 byte aligned start of .data. that gap becomes
+    # a segment boundary only when .text ends just under a 4k page, and then the last relocation of
+    # .data sits past the end of pdc's image: "ERROR: relocation offset outside of binary image". -n
+    # keeps .text and .data in one LOAD segment, so there is never a boundary to lose them at
+    target_link_options(${GAME_TARGET} PRIVATE -Wl,-n)
 else()
     add_library(${PLAYDATE_GAME_NAME} SHARED ${GAME_SOURCES})
     set(GAME_TARGET ${PLAYDATE_GAME_NAME})
