@@ -103,8 +103,9 @@ static void SpiWait(void)
 	while (!SERCOM4->SPI.INTFLAG.bit.TXC)
 		;
 	//The bytes the display sent back are of no use. Left in the receive buffer, the next
-	//SPI.transfer (the buttons) would take one of them as its answer
-	while (SERCOM4->SPI.INTFLAG.bit.RXC)
+	//SPI.transfer (the buttons) would take one of them as its answer. The count is bounded:
+	//the web emulator holds INTFLAG.RXC set for good, an unbounded loop never leaves it
+	for (uint8_t i = 0; i < 4 && SERCOM4->SPI.INTFLAG.bit.RXC; i++)
 		(void)SERCOM4->SPI.DATA.reg;
 	SERCOM4->SPI.STATUS.bit.BUFOVF = 1;
 	spiPending = false;
@@ -229,6 +230,11 @@ void PlatformGamebuinoDisplay::endWrite(void)
 {
 	if (writeDepth && (--writeDepth == 0))
 	{
+		//A NOP ends the pixel write the display was in. On the device the chip select
+		//below is what stops it listening, but the web emulator ignores the chip select
+		//and takes every byte on the SPI as display data: without this the buttons and
+		//the SD card paint over the pixels drawn last
+		WriteCommand(0x00);
 		SpiWait();
 		PORT->Group[1].OUTSET.reg = TFT_CS_MASK;
 		SPI.endTransaction();
