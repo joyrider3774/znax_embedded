@@ -758,8 +758,10 @@ void Platform_Log(const char* format, ...)
 // ===========================================================================
 // Saved data
 //
-// The whole storage block is kept in RAM and in the file /<Game>/<Game>.sav on the SD card,
-// named after the first word of the game's name. Bytes the file does not have yet read as 0xFF,
+// The whole storage block is kept in RAM and in the file /<Game>_embedded/<Game>_embedded.sav on
+// the SD card, named after the first word of the game's name. The loader gives every game a folder
+// of its own and there are other games called Sokoban and Waternet already, so the folder carries
+// the name of this repository and sits beside theirs instead of on top of them. Bytes the file does not have yet read as 0xFF,
 // the way erased flash does on the ESPboy, so the game sees a never saved store. Without a
 // card the game still runs, it just does not keep anything.
 // ===========================================================================
@@ -767,16 +769,17 @@ void Platform_Log(const char* format, ...)
 static SdFat sd;
 static bool sdReady = false;
 static uint8_t storage[PLATFORM_STORAGE_SIZE];
-static char storagePath[32] = "/game/game.sav";
+static char storagePath[64] = "/game_embedded/game_embedded.sav";
 
 static void StorageInit(const char* appName)
 {
 	memset(storage, 0xFF, sizeof(storage));
 	size_t n = 0;
-	while (appName[n] && (appName[n] != ' ') && (n < 12))
+	while (appName[n] && (appName[n] != ' ') && (n < 16))
 		n++;
 	if (n)
-		snprintf(storagePath, sizeof(storagePath), "/%.*s/%.*s.sav", (int)n, appName, (int)n, appName);
+		snprintf(storagePath, sizeof(storagePath), "/%.*s_embedded/%.*s_embedded.sav",
+		         (int)n, appName, (int)n, appName);
 
 	sdReady = sd.begin(SD_CS_PIN, SD_SCK_MHZ(12));
 	if (!sdReady)

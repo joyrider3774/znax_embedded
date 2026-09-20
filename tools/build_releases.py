@@ -125,7 +125,15 @@ DEVICES = {
     },
     "GamebuinoMeta": {
         "fqbn": "gamebuino:samd:gamebuino_meta_native",
-        "outputs": ["bin", "hex"],
+        # "zip from bin" makes the folder the META's loader wants, see package_with_data
+        "outputs": ["zip from bin"],
+        "data": "gamebuino",
+        # the .hex goes in the folder as well, it is what flashes the game over USB
+        "also": [".hex"],
+        # The folder it takes on the card, which is also where the game writes its save. Other
+        # games are called Sokoban and Waternet already, so these carry this repository's name
+        # and sit beside them instead of on top of them
+        "folder": GAME + "_embedded",
     },
     "PyBadge": {
         "fqbn": "adafruit:samd:adafruit_pybadge_m4",
@@ -222,6 +230,8 @@ SOURCE = os.path.join(ROOT, "source", SKETCH)
 RELEASES = os.path.join(ROOT, "releases")
 # every platform keeps its build files in a folder of its own under here
 PLATFORMS = os.path.join(ROOT, "platforms")
+# what a device wants on its card beside the game itself, a folder for each of them
+PLATFORM_DATA = os.path.join(ROOT, "platform_data")
 WORK = os.path.join(tempfile.gettempdir(), SKETCH + "_releases")
 
 
@@ -239,6 +249,31 @@ def bin_to_uf2(data, base, family):
         out += chunk + bytes(476 - len(chunk))
         out += struct.pack("<I", 0x0AB16F30)
     return bytes(out)
+
+
+def package_with_data(binary, folder_name, data_name, target, also=()):
+    """Zips the game up the way a device's card wants it: a folder named after the game holding the
+    binary, and beside it whatever platform_data has for that device (the META's loader reads its
+    ICON.BMP and TITLESCREEN.BMP from there). Unpacking the zip on the card is then the whole job"""
+    stage = os.path.join(WORK, "package_" + data_name)
+    shutil.rmtree(stage, ignore_errors=True)
+    folder = os.path.join(stage, folder_name)
+    os.makedirs(folder)
+    shutil.copyfile(binary, os.path.join(folder, folder_name + ".bin"))
+    # whatever else the build made that belongs with it, under the same name too
+    for extra in also:
+        shutil.copyfile(extra, os.path.join(folder, folder_name + os.path.splitext(extra)[1]))
+    data = os.path.join(PLATFORM_DATA, data_name)
+    if os.path.isdir(data):
+        for name in sorted(os.listdir(data)):
+            source = os.path.join(data, name)
+            if os.path.isfile(source):
+                shutil.copyfile(source, os.path.join(folder, name))
+    # the archive is made outside the folder it packs, so it can not end up inside itself
+    archive = shutil.make_archive(os.path.join(WORK, data_name + "_package"), "zip",
+                                  root_dir=stage, base_dir=folder_name)
+    shutil.copyfile(archive, target)
+    shutil.rmtree(stage, ignore_errors=True)
 
 
 def define_flags(defines):
@@ -754,7 +789,11 @@ def main():
         for output in DEVICES[device]["outputs"]:
             ext = output.split()[0]
             target = os.path.join(RELEASES, file_name(device, variant, ext))
-            if output == "uf2 from bin":
+            if output == "zip from bin":
+                also = [built + e for e in DEVICES[device].get("also", ())]
+                package_with_data(built + ".bin", DEVICES[device]["folder"],
+                                  DEVICES[device]["data"], target, also)
+            elif output == "uf2 from bin":
                 with open(built + ".bin", "rb") as f:
                     data = f.read()
                 with open(target, "wb") as f:
