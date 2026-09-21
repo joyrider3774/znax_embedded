@@ -559,6 +559,32 @@ def idf_python(idf_tools):
     return sys.executable
 
 
+def find_idf_tools():
+    """Where ESP-IDF installed its compilers, or "" when they cannot be found.
+
+    IDF_TOOLS_PATH says so when it is set, and a shell that ran export.bat has it. This script
+    is meant to be run without one, and then nothing points at the tools: idf_tools.py falls
+    back to ~/.espressif, while the Windows installer puts them in C:\\Espressif, so a machine
+    that installed them that way fails with "tool xtensa-esp-elf has no installed versions"
+    even though they are right there. The usual places are tried here instead.
+
+    Returning "" leaves idf_tools.py to its own default and its own error message."""
+    from_env = os.environ.get("IDF_TOOLS_PATH", "")
+    if from_env:
+        return from_env
+    candidates = [os.path.join(os.path.expanduser("~"), ".espressif")]
+    if os.name == "nt":
+        candidates.append(os.path.join(os.environ.get("SystemDrive", "C:") + os.sep, "Espressif"))
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            candidates.append(os.path.join(local, "Espressif"))
+    for candidate in candidates:
+        # the AKA's ESP32-S3 is an Xtensa part, so its compiler is the one that has to be there
+        if os.path.isdir(os.path.join(candidate, "tools", "xtensa-esp-elf")):
+            return candidate
+    return ""
+
+
 def build_aka(defines, build_dir, idf, idf_tools, aka_lib, log):
     """Builds the Gamebuino AKA binary with ESP-IDF, returns the path of the build's files without
     extension. This one is not plain CMake: an ESP-IDF project is built through idf.py, which wants
@@ -602,6 +628,8 @@ def build_aka(defines, build_dir, idf, idf_tools, aka_lib, log):
             f.write(export.stderr or export.stdout)
             f.write("\nRun the install script of the ESP-IDF in %s, or idf_tools.py install,\n"
                     "so that every tool it wants is there.\n" % idf)
+            f.write("If they are installed somewhere find_idf_tools did not look, pass\n"
+                    "--idf-tools <folder> or set IDF_TOOLS_PATH.\n")
         return None
     for line in export.stdout.splitlines():
         if "=" not in line or not line.split("=", 1)[0].isidentifier():
@@ -872,8 +900,9 @@ def main():
     parser.add_argument("--devkitpro", default=os.environ.get("DEVKITPRO", "C:/devkitarm"))
     parser.add_argument("--idf", default=os.environ.get("IDF_PATH", "C:/github/esp-idf"),
                         help="the ESP-IDF folder the Gamebuino AKA build uses (default IDF_PATH)")
-    parser.add_argument("--idf-tools", default=os.environ.get("IDF_TOOLS_PATH", ""),
-                        help="where ESP-IDF put its tools, when not the default (IDF_TOOLS_PATH)")
+    parser.add_argument("--idf-tools", default=find_idf_tools(),
+                        help="where ESP-IDF put its tools. IDF_TOOLS_PATH when it is set, else "
+                             "whichever of ~/.espressif and C:\\Espressif holds them")
     parser.add_argument("--aka-lib", default=os.environ.get("AKA_LIB_DIR", "C:/github/Gamebuino_AKA_lib"),
                         help="a checkout of Gamebuino_AKA_lib for the AKA build (default AKA_LIB_DIR)")
     parser.add_argument("--psn00bsdk", default=os.environ.get("PSN00BSDK_PREFIX", "C:/psn00bsdk"))

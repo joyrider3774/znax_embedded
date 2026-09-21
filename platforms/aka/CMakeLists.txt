@@ -60,6 +60,18 @@ set(BACKLIGHT 80 CACHE STRING "backlight brightness in percent, 0 to 100")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(${GAME_NAME})
 
+# The library's gb_graphics.h includes "gb_ll_LCD.h", but the file it means is
+# include_ll/gb_ll_lcd.h. Windows and macOS do not notice the difference; Linux does, and the
+# build stops at "gb_ll_LCD.h: No such file or directory" - which is what the CI runner hits.
+# Rather than patch a checkout of somebody else's library, a header of the name it asks for is
+# generated here and put on every component's include path, holding nothing but an include of
+# the real one by absolute path. Absolute matters: a plain #include "gb_ll_lcd.h" would find
+# this very file again where the filesystem ignores case.
+set(AKA_CASE_COMPAT "${CMAKE_BINARY_DIR}/aka_case_compat")
+file(WRITE "${AKA_CASE_COMPAT}/gb_ll_LCD.h"
+     "#pragma once\n#include \"${AKA_LIB_DIR}/components/gamebuino/include_ll/gb_ll_lcd.h\"\n")
+idf_build_set_property(COMPILE_OPTIONS "-I${AKA_CASE_COMPAT}" APPEND)
+
 # The library's fifo helpers in gb_ll_audio.c are "inline" without "static": a C99 inline
 # definition emits no symbol of its own, so it only links where the compiler inlined every call.
 # At -Os it does not inline them into the IRAM audio callback and the link fails with
