@@ -67,6 +67,8 @@ Usage:
   --dosdev DIR    DJGPP and CWSDPMI for the MS-DOS build (default DOSDEV, or C:/dos_dev)
 """
 import argparse
+import glob
+import json
 import os
 import re
 import shutil
@@ -125,6 +127,11 @@ DEVICES = {
     },
     "GamebuinoMeta": {
         "fqbn": "gamebuino:samd:gamebuino_meta_native",
+        # gcc 7 is what this core's toolsDependencies name, see toolchain_pref. gcc 9 compiles
+        # "x % 80" to a multiply and a RORS where gcc 7 calls __aeabi_uidivmod, and RORS is the one
+        # ARMv6-M instruction the emulator on gamebuino.com cannot decode: a game built with gcc 9
+        # dies there with "NO INSTRUCTIONHANDLER". The META itself runs either one
+        "toolchain": ("arm-none-eabi-gcc", "7-2017q4"),
         # "zip from bin" makes the folder the META's loader wants, see package_with_data
         "outputs": ["zip from bin"],
         "data": "gamebuino",
@@ -137,11 +144,13 @@ DEVICES = {
     },
     "PyBadge": {
         "fqbn": "adafruit:samd:adafruit_pybadge_m4",
+        "toolchain": ("arm-none-eabi-gcc", "9-2019q4"),
         "outputs": ["uf2 from bin"],
         "uf2": (0x4000, 0x55114460),
     },
     "PyGamer": {
         "fqbn": "adafruit:samd:adafruit_pygamer_m4",
+        "toolchain": ("arm-none-eabi-gcc", "9-2019q4"),
         "outputs": ["uf2 from bin"],
         "uf2": (0x4000, 0x55114460),
     },
@@ -316,10 +325,65 @@ def windows_binaries(cross):
     return (os.name == "nt") or bool(cross)
 
 
+def toolchain_pref(device, packages, log):
+    """The runtime.tools pref that pins a device's compiler, or "" when it pins none.
+
+    A core names the compiler it wants in its toolsDependencies, but its platform.txt asks for it
+    as {runtime.tools.arm-none-eabi-gcc.path}, without the version. With several cores installed
+    side by side that leaves the builder free to take any arm-none-eabi-gcc it finds, and it takes
+    the newest rather than the one the core asks for. The Arduino IDE folder and the CI's
+    arduino-cli both hold the Gamebuino, Adafruit and Arduino SAMD cores at once, so both are
+    affected. Returns None, and writes why into the log, when the pinned version is not installed"""
+    pin = DEVICES[device].get("toolchain")
+    if not pin:
+        return ""
+    name, version = pin
+    found = sorted(glob.glob(os.path.join(packages, "*", "tools", name, version)))
+    if not found:
+        with open(log, "w") as f:
+            f.write("%s pins %s %s, which is not installed under %s.\n"
+                    % (device, name, version, packages))
+            f.write("Install the core that brings it, or drop the pin from DEVICES.\n")
+        return None
+    return "runtime.tools.%s.path=%s" % (name, found[0].replace(os.sep, "/"))
+
+
+def config_data_dir(node):
+    """directories.data out of an arduino-cli config dump, wherever the version nests it"""
+    if isinstance(node, dict):
+        directories = node.get("directories")
+        if isinstance(directories, dict) and isinstance(directories.get("data"), str):
+            return directories["data"]
+        for value in node.values():
+            found = config_data_dir(value)
+            if found:
+                return found
+    return ""
+
+
+def arduino_cli_packages(arduino_cli):
+    """Where arduino-cli keeps the installed cores and their tools. "config dump" is asked rather
+    than "config get", which older arduino-cli versions answer with their help text"""
+    data = ""
+    try:
+        result = subprocess.run([arduino_cli, "config", "dump", "--format", "json"],
+                                capture_output=True, text=True)
+        data = config_data_dir(json.loads(result.stdout))
+    except (OSError, ValueError):
+        data = ""
+    if not os.path.isdir(data):
+        # what arduino-cli falls back to itself, and where the CI runner keeps it
+        data = os.path.join(os.path.expanduser("~"), ".arduino15")
+    return os.path.join(data, "packages")
+
+
 def build_arduino_cli(device, defines, build_dir, cache_dir, arduino_cli, log):
     """Builds the sketch with arduino-cli, which is what the build uses where there is no Arduino IDE
     1.8 folder (the CI runners). Returns the path of the build's files without extension"""
     flags = define_flags(defines)
+    toolchain = toolchain_pref(device, arduino_cli_packages(arduino_cli), log)
+    if toolchain is None:
+        return None
     command = [
         arduino_cli, "compile",
         "--fqbn", DEVICES[device]["fqbn"],
@@ -328,8 +392,11 @@ def build_arduino_cli(device, defines, build_dir, cache_dir, arduino_cli, log):
         # empty in every one of the board packages, so the defines are all they hold
         "--build-property", "compiler.c.extra_flags=" + flags,
         "--build-property", "compiler.cpp.extra_flags=" + flags,
-        SOURCE,
     ]
+    # the compiler the device's core asks for, where it does not leave the choice open
+    if toolchain:
+        command += ["--build-property", toolchain]
+    command.append(SOURCE)
     with open(log, "w") as f:
         result = subprocess.run(command, stdout=f, stderr=subprocess.STDOUT)
     if result.returncode != 0:
@@ -341,6 +408,9 @@ def build_arduino(device, defines, build_dir, cache_dir, arduino, log):
     """Builds the sketch with arduino-builder, returns the path of the build's files without extension"""
     portable = os.path.join(arduino, "portable")
     flags = define_flags(defines)
+    toolchain = toolchain_pref(device, os.path.join(portable, "packages"), log)
+    if toolchain is None:
+        return None
     command = [
         os.path.join(arduino, "arduino-builder.exe" if os.name == "nt" else "arduino-builder"),
         "-compile", "-logger=human",
@@ -358,8 +428,11 @@ def build_arduino(device, defines, build_dir, cache_dir, arduino, log):
         # empty in every one of the board packages, so the defines are all they hold
         "-prefs", "compiler.c.extra_flags=" + flags,
         "-prefs", "compiler.cpp.extra_flags=" + flags,
-        os.path.join(SOURCE, SKETCH + ".ino"),
     ]
+    # the compiler the device's core asks for, where it does not leave the choice open
+    if toolchain:
+        command += ["-prefs", toolchain]
+    command.append(os.path.join(SOURCE, SKETCH + ".ino"))
     with open(log, "w") as f:
         result = subprocess.run(command, stdout=f, stderr=subprocess.STDOUT)
     if result.returncode != 0:
