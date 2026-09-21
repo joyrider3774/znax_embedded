@@ -25,6 +25,8 @@ env:
   # the Gamebuino's core uses Arduino's own CMSIS-Atmel tool package for sam.h, which comes with the
   # arduino:samd core: without it the build stops at "sam.h: No such file or directory"
   CORE_ARDUINO_SAMD: 1.8.14
+  # the Gamebuino AKA side: the ESP-IDF version the AKA library's own projects use
+  IDF_VERSION: v5.5.1
   # LovyanGFX and TFT_eSPI are what the ESPboy build needs. TFT_eSPI 2.4.76, which the development
   # machine has, was never released to the library index (it is a snapshot between 2.4.72 and 2.4.79):
   # the ESPboy draws through LovyanGFX and only includes TFT_eSPI's header, so 2.4.72 does as well
@@ -231,6 +233,23 @@ jobs:
           arduino-cli lib install "Adafruit ST7735 and ST7789 Library@${LIB_ST7735}"
 
       # ------------------------------------------------------------------ the builds
+      # ESP-IDF and the Gamebuino AKA library, for the AKA build. install.sh is slow, so only
+      # the esp32s3 toolchain is asked for
+      - name: Install ESP-IDF and the Gamebuino AKA library
+        run: |
+          set -e
+          git clone -b ${IDF_VERSION} --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/espressif/esp-idf.git "$HOME/toolchains/esp-idf"
+          export IDF_TOOLS_PATH="$HOME/toolchains/espressif"
+          export IDF_PATH="$HOME/toolchains/esp-idf"
+          "$IDF_PATH/install.sh" esp32s3
+          # idf_tools.py export insists on every tool of the install and this one is not in
+          # the esp32s3 set: without it the build stops at "has no installed versions"
+          "$IDF_TOOLS_PATH"/python_env/*/bin/python "$IDF_PATH/tools/idf_tools.py" \
+            install riscv32-esp-elf-gdb
+          git clone --depth 1 https://github.com/jmp42/Gamebuino_AKA_lib.git \
+            "$HOME/toolchains/Gamebuino_AKA_lib"
+
       - name: Build every device
         run: |
           # emcc finds its own config and node through this, the browser build needs both
@@ -248,6 +267,9 @@ jobs:
             --pspdev "$HOME/toolchains/pspdev" \
             --vitasdk "$HOME/toolchains/vitasdk" \
             --libretro-common "$HOME/toolchains/libretro-common" \
+            --idf "$HOME/toolchains/esp-idf" \
+            --idf-tools "$HOME/toolchains/espressif" \
+            --aka-lib "$HOME/toolchains/Gamebuino_AKA_lib" \
             --lovyangfx "$HOME/Arduino/libraries/LovyanGFX" \
             --cross-windows \
             --sdl2-mingw "$HOME/toolchains/SDL2/x86_64-w64-mingw32"

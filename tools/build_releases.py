@@ -105,6 +105,7 @@ TARGETS = [
     ("DOS", "", {}),
     ("Playdate", "", {}),
     ("Libretro", "", {}),
+    ("Aka", "", {}),
     ("GBA", "", {}),
     ("NDS", "", {}),
     ("3DS", "", {}),
@@ -188,6 +189,11 @@ DEVICES = {
     "Libretro": {
         "libretro": True,
         "outputs": ["zip"],
+    },
+    # built from aka/, see build_aka. An ESP-IDF project, not a plain CMake one
+    "Aka": {
+        "aka": True,
+        "outputs": ["bin"],
     },
     # built from gba/, see build_gba
     "GBA": {
@@ -538,6 +544,84 @@ def build_libretro(defines, build_dir, msys2, libretro_common, cross, log):
     return os.path.join(build_dir, "core")
 
 
+def idf_python(idf_tools):
+    """idf.py runs in the virtual environment ESP-IDF made for itself, not in whatever Python
+    started this script: called with any other interpreter it stops at "No module named click".
+    Returns that environment's interpreter, or this one when there is no environment to find"""
+    roots = [idf_tools] if idf_tools else []
+    roots.append(os.path.join(os.path.expanduser("~"), ".espressif"))
+    for root in roots:
+        for where in ("Scripts", "bin"):
+            found = sorted(glob.glob(os.path.join(root, "python_env", "*", where, "python*")))
+            found = [f for f in found if os.path.isfile(f) and not f.endswith(("w.exe", "-config"))]
+            if found:
+                return found[-1]
+    return sys.executable
+
+
+def build_aka(defines, build_dir, idf, idf_tools, aka_lib, log):
+    """Builds the Gamebuino AKA binary with ESP-IDF, returns the path of the build's files without
+    extension. This one is not plain CMake: an ESP-IDF project is built through idf.py, which wants
+    IDF_PATH and the tools it installed, so the environment is set up here rather than exported by
+    hand. "idf.py set-target" is never run: it would write a fresh sdkconfig over the defaults this
+    device needs (PSRAM above all) and the link would then fail on the DRAM segment"""
+    env = dict(os.environ)
+    env["IDF_PATH"] = idf
+    if idf_tools:
+        env["IDF_TOOLS_PATH"] = idf_tools
+    env["AKA_LIB_DIR"] = aka_lib
+    # idf.py refuses to run when it sees an MSYS2 or Git Bash environment around it, and this
+    # script is as likely to be started from one as from a native shell. Those variables say
+    # nothing idf.py needs, so the build gets an environment without them
+    for shell_var in ("MSYSTEM", "MSYSTEM_PREFIX", "MSYSCON", "MINGW_PREFIX"):
+        env.pop(shell_var, None)
+    source = os.path.join(PLATFORMS, "aka")
+
+    if not os.path.isfile(os.path.join(idf, "tools", "idf.py")):
+        with open(log, "w") as f:
+            f.write("ESP-IDF was not found in %s.\n" % idf)
+            f.write("Pass --idf <folder>, or set IDF_PATH.\n")
+        return None
+    if not os.path.isfile(os.path.join(aka_lib, "components", "gamebuino", "include_lib", "gamebuino.h")):
+        with open(log, "w") as f:
+            f.write("the Gamebuino AKA library was not found in %s.\n" % aka_lib)
+            f.write("Clone https://github.com/jmp42/Gamebuino_AKA_lib and pass --aka-lib <folder>,"
+                    " or set AKA_LIB_DIR.\n")
+        return None
+
+    # The compiler, cmake and ninja are where ESP-IDF installed them, not on the PATH: a shell
+    # normally gets them from export.ps1 / export.sh, and this script is meant to be run without
+    # one. idf_tools.py hands over the same settings, so they are asked for and applied here
+    python = idf_python(idf_tools)
+    export = subprocess.run([python, os.path.join(idf, "tools", "idf_tools.py"),
+                             "export", "--format", "key-value"],
+                            capture_output=True, text=True, env=env)
+    if export.returncode != 0:
+        with open(log, "w") as f:
+            f.write("ESP-IDF could not tell the build where its tools are:\n\n")
+            f.write(export.stderr or export.stdout)
+            f.write("\nRun the install script of the ESP-IDF in %s, or idf_tools.py install,\n"
+                    "so that every tool it wants is there.\n" % idf)
+        return None
+    for line in export.stdout.splitlines():
+        if "=" not in line or not line.split("=", 1)[0].isidentifier():
+            continue
+        name, value = line.split("=", 1)
+        # the PATH it gives keeps the one already set as a placeholder
+        value = value.replace("%PATH%", env.get("PATH", "")).replace("$PATH", env.get("PATH", ""))
+        env[name] = value
+
+    command = [python, os.path.join(idf, "tools", "idf.py"),
+               "-C", source, "-B", build_dir]
+    command += ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
+    command += ["-DAKA_LIB_DIR=" + aka_lib.replace(os.sep, "/"), "build"]
+    with open(log, "w") as f:
+        result = subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env)
+    if result.returncode != 0:
+        return None
+    return os.path.join(build_dir, GAME)
+
+
 def build_gba(defines, build_dir, msys2, devkitpro, log):
     """Builds the Game Boy Advance ROM with CMake and ninja from MSYS2, returns the path of the ROM
     without extension. The screen buffer goes in the GBA's fast memory, and when the game's globals
@@ -786,6 +870,12 @@ def main():
     parser.add_argument("--msys2", default=os.environ.get("MSYS2_BIN", "C:/msys64/mingw64/bin"))
     parser.add_argument("--playdate-sdk", default=os.environ.get("PLAYDATE_SDK_PATH", "C:/playdate/PlaydateSDK"))
     parser.add_argument("--devkitpro", default=os.environ.get("DEVKITPRO", "C:/devkitarm"))
+    parser.add_argument("--idf", default=os.environ.get("IDF_PATH", "C:/github/esp-idf"),
+                        help="the ESP-IDF folder the Gamebuino AKA build uses (default IDF_PATH)")
+    parser.add_argument("--idf-tools", default=os.environ.get("IDF_TOOLS_PATH", ""),
+                        help="where ESP-IDF put its tools, when not the default (IDF_TOOLS_PATH)")
+    parser.add_argument("--aka-lib", default=os.environ.get("AKA_LIB_DIR", "C:/github/Gamebuino_AKA_lib"),
+                        help="a checkout of Gamebuino_AKA_lib for the AKA build (default AKA_LIB_DIR)")
     parser.add_argument("--psn00bsdk", default=os.environ.get("PSN00BSDK_PREFIX", "C:/psn00bsdk"))
     parser.add_argument("--n64", default=os.environ.get("N64_INST", "C:/n64_dev"))
     parser.add_argument("--emsdk", default=os.environ.get("EMSDK", "C:/github/emsdk"))
@@ -842,6 +932,8 @@ def main():
 
         if DEVICES[device].get("cmake"):
             built = build_windows(defines, build_dir, args.msys2, cross, args.lovyangfx, log)
+        elif DEVICES[device].get("aka"):
+            built = build_aka(defines, build_dir, args.idf, args.idf_tools, args.aka_lib, log)
         elif DEVICES[device].get("gba"):
             built = build_gba(defines, build_dir, args.msys2, args.devkitpro, log)
         elif DEVICES[device].get("nds"):

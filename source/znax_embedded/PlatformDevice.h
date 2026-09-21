@@ -11,11 +11,12 @@
 //build (gba/CMakeLists.txt) PLATFORM_GBA and the Nintendo DS build (nds/CMakeLists.txt) PLATFORM_NDS and the
 //Nintendo 3DS build (3ds/CMakeLists.txt) PLATFORM_3DS and the PlayStation build
 //(psx/CMakeLists.txt) PLATFORM_PSX and the Nintendo 64 build (n64/CMakeLists.txt) PLATFORM_N64
+//and the Gamebuino AKA build (aka/CMakeLists.txt) PLATFORM_AKA
 //and the PlayStation Portable build (psp/CMakeLists.txt)
 //PLATFORM_PSP and the PlayStation Vita build (vita/CMakeLists.txt) PLATFORM_VITA,
 //an Arduino build is picked from the defines the board package of the board selected in the IDE sets.
 //A build can still define one of the PLATFORM_ names itself, then nothing is detected
-#if !defined(PLATFORM_SDL) && !defined(PLATFORM_WEB) && !defined(PLATFORM_DOS) && !defined(PLATFORM_PLAYDATE) && !defined(PLATFORM_LIBRETRO) && !defined(PLATFORM_GBA) && !defined(PLATFORM_NDS) && !defined(PLATFORM_3DS) && !defined(PLATFORM_PSX) && !defined(PLATFORM_N64) && !defined(PLATFORM_PSP) && !defined(PLATFORM_VITA) && !defined(PLATFORM_GAMEBUINO) && !defined(PLATFORM_ESPBOY) && !defined(PLATFORM_PYBADGE) && !defined(PLATFORM_PICOSYSTEM) && !defined(PLATFORM_EXPLORER) && !defined(PLATFORM_TUFTY) && !defined(PLATFORM_THUMBY)
+#if !defined(PLATFORM_SDL) && !defined(PLATFORM_WEB) && !defined(PLATFORM_DOS) && !defined(PLATFORM_PLAYDATE) && !defined(PLATFORM_LIBRETRO) && !defined(PLATFORM_GBA) && !defined(PLATFORM_NDS) && !defined(PLATFORM_3DS) && !defined(PLATFORM_PSX) && !defined(PLATFORM_N64) && !defined(PLATFORM_PSP) && !defined(PLATFORM_VITA) && !defined(PLATFORM_GAMEBUINO) && !defined(PLATFORM_ESPBOY) && !defined(PLATFORM_PYBADGE) && !defined(PLATFORM_PICOSYSTEM) && !defined(PLATFORM_EXPLORER) && !defined(PLATFORM_TUFTY) && !defined(PLATFORM_THUMBY) && !defined(PLATFORM_AKA)
   #if defined(ADAFRUIT_PYBADGE_M4_EXPRESS) || defined(ADAFRUIT_PYGAMER_M4_EXPRESS)
     //Adafruit's board package, the PyGamer builds the same code with its joystick as the d-pad
     #define PLATFORM_PYBADGE 1
@@ -63,6 +64,8 @@
 #include "PlatformTufty.h"
 #elif defined(PLATFORM_THUMBY)
 #include "PlatformThumby.h"
+#elif defined(PLATFORM_AKA)
+#include "PlatformAka.h"
 #elif defined(PLATFORM_SDL)
 #include "PlatformSDL.h"
 #elif defined(PLATFORM_WEB)
