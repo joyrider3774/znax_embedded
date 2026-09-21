@@ -606,7 +606,6 @@ extern "C" void TC5_Handler(void)
 	static uint32_t halfWaveCount = 0;
 	static bool high = false;
 	static uint16_t middle = 0;
-	static int16_t lastOutput = -1;
 	int16_t output;
 	if (toneHalfWave && (tonePlaysOn || toneSamplesLeft))
 	{
@@ -631,12 +630,13 @@ extern "C" void TC5_Handler(void)
 			middle--;
 		output = (int16_t)middle;
 	}
-	//the DAC is only written when the level changes, most samples it does not
-	if (output != lastOutput)
-	{
-		analogWrite(A0, output);
-		lastOutput = output;
-	}
+	//Every sample is written, not only the ones that change the level: the web emulator
+	//takes one audio sample per DAC write, and dropping the samples that hold their
+	//level collapses the wave into noise. Straight to the register: analogWrite's three
+	//syncs and its CTRLA read-modify-write cost more than the rest of this handler
+	while (DAC->STATUS.bit.SYNCBUSY)
+		;
+	DAC->DATA.reg = (uint16_t)output;
 	TC5->COUNT16.INTFLAG.bit.MC0 = 1;
 }
 
