@@ -362,10 +362,16 @@ static void AudioTask(void*)
 
 void Platform_PlayTone(uint16_t freq, uint16_t duration)
 {
+	//a frequency of 0 is a rest, as on every other platform: it silences the tone. Every
+	//tune in Sound.cpp ends with one, and dropping it leaves the last note sounding for the
+	//0xFFFF milliseconds below, until the next tone happens to replace it
 	if (!freq)
+	{
+		toneTrack.stop_playing();
 		return;
+	}
 	//a duration of 0 means "until it is stopped", which the track has no notion of: the
-	//longest note it takes stands in, Platform_StopTone ends it
+	//longest note it takes stands in, the next tone or Platform_StopTone ends it
 	toneTrack.play_tone((float)freq, TONE_VOLUME, duration ? duration : 0xFFFF,
 	                    gb_audio_track_tone::SQUARE);
 }
