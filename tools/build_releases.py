@@ -68,6 +68,7 @@ Usage:
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -132,6 +133,8 @@ DEVICES = {
         # ARMv6-M instruction the emulator on gamebuino.com cannot decode: a game built with gcc 9
         # dies there with "NO INSTRUCTIONHANDLER". The META itself runs either one
         "toolchain": ("arm-none-eabi-gcc", "7-2017q4"),
+        # the core builds at -Os; this game has the flash to spare for -O3
+        "optimize": "-O3",
         # "zip from bin" makes the folder the META's loader wants, see package_with_data
         "outputs": ["zip from bin"],
         "data": "gamebuino",
@@ -289,6 +292,24 @@ def define_flags(defines):
     return " ".join("-D%s=%s" % (name, value) for name, value in sorted(defines.items()))
 
 
+def cache_tag(device, defines):
+    """Part of the core cache's folder name, so that every set of compiler settings gets a cache of
+    its own. arduino-builder keys its cache on the board alone, so a core compiled at -Os, or with
+    another toolchain, is quietly reused once those change and the build ends up with objects from
+    both. Anything that changes how the core is compiled belongs in here"""
+    settings = "%s|%s" % (extra_flags(device, defines), DEVICES[device].get("toolchain", ""))
+    return hashlib.sha1(settings.encode()).hexdigest()[:8]
+
+
+def extra_flags(device, defines):
+    """What goes into compiler.c/cpp.extra_flags: the build's defines, and the optimisation level
+    where a device asks for one of its own. The recipe puts extra_flags after the core's own flags,
+    so a -O here is the one that counts"""
+    flags = define_flags(defines)
+    optimize = DEVICES[device].get("optimize")
+    return (flags + " " + optimize).strip() if optimize else flags
+
+
 def tool_env(extra_dirs):
     """The environment with the given folders in front of PATH, skipping the ones that do not exist.
     On a machine without MSYS2 (a Linux runner) the tools come from the PATH as they are"""
@@ -380,7 +401,7 @@ def arduino_cli_packages(arduino_cli):
 def build_arduino_cli(device, defines, build_dir, cache_dir, arduino_cli, log):
     """Builds the sketch with arduino-cli, which is what the build uses where there is no Arduino IDE
     1.8 folder (the CI runners). Returns the path of the build's files without extension"""
-    flags = define_flags(defines)
+    flags = extra_flags(device, defines)
     toolchain = toolchain_pref(device, arduino_cli_packages(arduino_cli), log)
     if toolchain is None:
         return None
@@ -407,7 +428,7 @@ def build_arduino_cli(device, defines, build_dir, cache_dir, arduino_cli, log):
 def build_arduino(device, defines, build_dir, cache_dir, arduino, log):
     """Builds the sketch with arduino-builder, returns the path of the build's files without extension"""
     portable = os.path.join(arduino, "portable")
-    flags = define_flags(defines)
+    flags = extra_flags(device, defines)
     toolchain = toolchain_pref(device, os.path.join(portable, "packages"), log)
     if toolchain is None:
         return None
@@ -845,7 +866,7 @@ def main():
             built = build_vita(defines, build_dir, args.msys2, args.vitasdk, log)
         else:
             # the core and libraries are compiled once per device and kept between builds
-            cache_dir = os.path.join(WORK, "cache_" + device)
+            cache_dir = os.path.join(WORK, "cache_%s_%s" % (device, cache_tag(device, defines)))
             os.makedirs(cache_dir, exist_ok=True)
             if args.arduino_cli:
                 built = build_arduino_cli(device, defines, build_dir, cache_dir, args.arduino_cli, log)
