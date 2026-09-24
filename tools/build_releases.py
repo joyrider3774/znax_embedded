@@ -13,7 +13,8 @@ Every file is named <device>_<game><variant>.<ext>, for example PicoSystem_Znax.
   ThumbyColor   .uf2   put it into bootloader mode and copy it onto the RPI-RP2 drive that appears
   Windows        .exe   linked statically, it runs on its own without a console window
   Web            .zip   index.html, .js and .wasm, ready to upload to an itch.io HTML project
-  DOS            .zip   a 32 bit MS-DOS program with its DPMI host built in, for DOSBox or a real PC
+  DOS            .zip   a 32 bit MS-DOS program with its DPMI host built in, for DOSBox or a real PC.
+                        Released twice: the one marked _ND holds the same game with DITHERING 0
   Playdate       .pdx.zip  unzip it and sideload the .pdx, it runs on the device and in the simulator
   Libretro       .zip   the core (<game>_libretro.dll) and its .info for RetroArch's cores and info folders
   GBA            .gba   a Game Boy Advance ROM, for an emulator or a flash cart
@@ -106,6 +107,9 @@ TARGETS = [
     ("Windows", "", {}),
     ("Web", "", {}),
     ("DOS", "", {}),
+    # the same program with its colours not spread, to compare against on a 256 colour
+    # screen. See DITHERING in PlatformDOS.h
+    ("DOS", "_ND", {"DITHERING": 0}),
     ("Playdate", "", {}),
     ("Libretro", "", {}),
     ("Aka", "", {}),
@@ -734,7 +738,17 @@ def build_psx(defines, build_dir, msys2, psn00bsdk, log):
     return os.path.join(build_dir, GAME)
 
 
-def build_dos(defines, build_dir, msys2, dosdev, log):
+def dos_program(variant):
+    """The name the program carries inside the MS-DOS zip. DOS holds eight characters and three, so
+    a variant's mark takes the place of the end of the game's name instead of being added to it:
+    two of them can then be unpacked into one folder without one standing on the other"""
+    if not variant:
+        return GAME.upper()[:8] + ".EXE"
+    mark = variant.strip("_").upper()[:3]
+    return GAME.upper()[:7 - len(mark)] + "_" + mark + ".EXE"
+
+
+def build_dos(defines, variant, build_dir, msys2, dosdev, log):
     """Builds the MS-DOS program with DJGPP and zips it, returns the path of the zip without
     extension. It is zipped rather than released on its own because DOS only takes eight characters
     and three, and the name the release files carry is longer than that"""
@@ -753,7 +767,8 @@ def build_dos(defines, build_dir, msys2, dosdev, log):
         return None
     package = os.path.join(build_dir, "package")
     os.makedirs(package)
-    shutil.copyfile(os.path.join(build_dir, program), os.path.join(package, program))
+    #the variant's own name, so that two of them can be unpacked side by side
+    shutil.copyfile(os.path.join(build_dir, program), os.path.join(package, dos_program(variant)))
     shutil.make_archive(os.path.join(build_dir, "dos"), "zip", root_dir=package)
     return os.path.join(build_dir, "dos")
 
@@ -998,7 +1013,7 @@ def main():
         elif DEVICES[device].get("web"):
             built = build_web(defines, build_dir, args.msys2, args.emsdk, log)
         elif DEVICES[device].get("dos"):
-            built = build_dos(defines, build_dir, args.msys2, args.dosdev, log)
+            built = build_dos(defines, variant, build_dir, args.msys2, args.dosdev, log)
         elif DEVICES[device].get("libretro"):
             built = build_libretro(defines, build_dir, args.msys2, args.libretro_common, cross, log)
         elif DEVICES[device].get("playdate"):

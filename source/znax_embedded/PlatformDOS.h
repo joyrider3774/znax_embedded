@@ -33,6 +33,14 @@
 #error "SCREENBUFFER has to be 0, 1, 8 or 16 on MS-DOS"
 #endif
 
+//1 = a shade the buffer has no colour for is a pattern of the two nearest ones it does have,
+//0 = it becomes the nearer of them, which shows as bands. On here by default: the screen is
+//256 colours and the 8 bpp buffer that feeds it is RGB332, which is coarse enough for the bands
+//to show on anything that shades. A build can still set it itself, see DITHERING in defines.h
+#ifndef DITHERING
+#define DITHERING 1
+#endif
+
 //1 = the frame is blown up to 240x240, as high as the screen, in its middle. 0 = it is shown 1:1 in
 //the middle. A build can still set it itself
 #ifndef SCALESCREEN

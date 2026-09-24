@@ -43,7 +43,8 @@ endif()
 # 1 = the colours of an image are spread over the ones the buffer can hold instead of every colour
 # becoming the nearest one there is, 0 = they are not. An 8 bpp and a 1 bpp buffer have something
 # to gain from it, see DITHERING in defines.h
-set(DITHERING 0 CACHE STRING "DITHERING setting: 0 or 1")
+# on by default here, unlike the other devices: see DITHERING in PlatformDOS.h
+set(DITHERING 1 CACHE STRING "DITHERING setting: 0 or 1")
 if(NOT DITHERING MATCHES "^(0|1)$")
     message(FATAL_ERROR "DITHERING has to be 0 or 1, not ${DITHERING}")
 endif()
