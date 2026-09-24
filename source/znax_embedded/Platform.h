@@ -86,6 +86,56 @@ extern PlatformBuffer screenBuffer;
 #define GFX SCREEN
 #endif
 
+#if DITHERING && ((SCREENBUFFER == 1) || (SCREENBUFFER == 8))
+//Where in the spread of a colour the pixel at x,y falls, 0 to 15: the 4x4 Bayer pattern. x and y
+//are where the pixel lands on the screen, so the pattern stands still and a picture drawn twice in
+//the same place comes out the same both times
+static inline uint8_t DitherSpread(int16_t x, int16_t y)
+{
+	static const uint8_t pattern[4][4] = {
+		{  0,  8,  2, 10 },
+		{ 12,  4, 14,  6 },
+		{  3, 11,  1,  9 },
+		{ 15,  7, 13,  5 }
+	};
+	return pattern[y & 3][x & 3];
+}
+#endif
+
+#if SCREENBUFFER == 8
+//The RGB332 an 8 bpp buffer keeps a colour as. Red keeps 3 of its 5 bits, green 3 of its 6 and
+//blue 2 of its 5, and without DITHERING what does not fit is simply dropped: the same conversion
+//both libraries apply to everything else.
+//
+//With DITHERING the colour is first given a share of the pattern, as much as one step of what that
+//channel is about to lose, so a shade that falls between two of the colours RGB332 has comes out as
+//the two of them in a pattern rather than as the nearer one, and what would be a band across a sky
+//becomes a texture. See DitherSpread for where x and y come into it.
+//
+//A colour RGB332 holds exactly is not moved by this: the share added is always less than the step
+//it would take to reach the next one. Black and white therefore come out of this the same as they
+//go in, and meet a dithered image without a seam
+static inline uint8_t ToBuffer332(uint16_t color, int16_t x, int16_t y)
+{
+  #if DITHERING
+	const uint8_t spread = DitherSpread(x, y);
+	//red loses 2 bits so its step is 4 and it is given 0 to 3, green and blue lose 3 so theirs is
+	//8 and they are given 0 to 7. The brightest colours would carry past what the channel holds
+	uint16_t r = (uint16_t)((color >> 11) & 0x1F) + (spread >> 2);
+	uint16_t g = (uint16_t)((color >> 5) & 0x3F) + (spread >> 1);
+	uint16_t b = (uint16_t)(color & 0x1F) + (spread >> 1);
+	if (r > 0x1F) r = 0x1F;
+	if (g > 0x3F) g = 0x3F;
+	if (b > 0x1F) b = 0x1F;
+	return (uint8_t)(((r & 0x1C) << 3) | ((g & 0x38) >> 1) | (b >> 3));
+  #else
+	(void)x;
+	(void)y;
+	return (uint8_t)(((color & 0xE000) >> 8) | ((color & 0x0700) >> 6) | ((color & 0x0018) >> 3));
+  #endif
+}
+#endif
+
 #if SCREENBUFFER == 1
 //A 1 bpp buffer only knows set and clear, the frame shows them in the colours given to
 //Platform_SetBufferColors. The black & white skin is white on black, a pixel is set when
@@ -95,17 +145,23 @@ static inline void SetBufferBit(uint8_t* dst, int16_t x, int16_t y, uint16_t col
 	//images repeat the same few colours, so the answer for the last colour is kept instead
 	//of working out the brightness again for every pixel
 	static uint16_t lastColor = 0x0000;
-	static bool lastSet = false;
+	static uint16_t lastLum = 0;
 	if (color != lastColor)
 	{
 		//luminance on a 0-255 scale from the 5, 6 and 5 bit channels
-		uint16_t lum = ((((color >> 11) & 0x1F) << 3) * 77 + (((color >> 5) & 0x3F) << 2) * 150 + ((color & 0x1F) << 3) * 29) >> 8;
+		lastLum = ((((color >> 11) & 0x1F) << 3) * 77 + (((color >> 5) & 0x3F) << 2) * 150 + ((color & 0x1F) << 3) * 29) >> 8;
 		lastColor = color;
-		lastSet = (lum >= 128);
 	}
+  #if DITHERING
+	//the pattern over the same 0-255 scale, 8 to 248: black is under all of it and white over all
+	//of it, so only the shades in between become a pattern of the two
+	const bool set = (lastLum > (uint16_t)(DitherSpread(x, y) * 16u + 8u));
+  #else
+	const bool set = (lastLum >= 128);
+  #endif
 	//bits are packed most significant first, the same layout TFT_eSprite::drawPixel uses
 	uint8_t mask = 0x80 >> (x & 7);
-	if (lastSet)
+	if (set)
 		dst[(x + y * WINDOW_WIDTH) >> 3] |= mask;
 	else
 		dst[(x + y * WINDOW_WIDTH) >> 3] &= ~mask;
@@ -121,8 +177,7 @@ static inline void SetBufferPixel(void* dst, int16_t x, int16_t y, uint16_t colo
 	//a 16 bpp sprite keeps its pixels byte swapped
 	((uint16_t*)dst)[y * WINDOW_WIDTH + x] = (uint16_t)((color >> 8) | (color << 8));
   #elif SCREENBUFFER == 8
-	//RGB332, the same conversion both libraries apply to everything else
-	((uint8_t*)dst)[y * WINDOW_WIDTH + x] = (uint8_t)(((color & 0xE000) >> 8) | ((color & 0x0700) >> 6) | ((color & 0x0018) >> 3));
+	((uint8_t*)dst)[y * WINDOW_WIDTH + x] = ToBuffer332(color, x, y);
   #else
 	SetBufferBit((uint8_t*)dst, x, y, color);
   #endif

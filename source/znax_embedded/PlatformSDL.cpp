@@ -13,7 +13,10 @@
 #include <LGFX_AUTODETECT.hpp>
 
 //how much bigger than the game's resolution the window opens, it can be resized after
-#define WINDOW_SCALE 4
+//A build can still set it itself
+#ifndef WINDOW_SCALE
+#define WINDOW_SCALE 4
+#endif
 
 static LGFX display(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_SCALE);
 PlatformDisplay& platformDisplay = display;

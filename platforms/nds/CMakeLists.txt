@@ -45,6 +45,14 @@ set_property(CACHE SCREENBUFFER PROPERTY STRINGS 0 1 8 16)
 if(NOT SCREENBUFFER MATCHES "^(0|1|8|16)$")
     message(FATAL_ERROR "SCREENBUFFER has to be 0, 1, 8 or 16, not ${SCREENBUFFER}")
 endif()
+# 1 = the colours of an image are spread over the ones the buffer can hold instead of every colour
+# becoming the nearest one there is, 0 = they are not. An 8 bpp and a 1 bpp buffer have something
+# to gain from it, see DITHERING in defines.h
+set(DITHERING 0 CACHE STRING "DITHERING setting: 0 or 1")
+if(NOT DITHERING MATCHES "^(0|1)$")
+    message(FATAL_ERROR "DITHERING has to be 0 or 1, not ${DITHERING}")
+endif()
+
 
 # 1 = scaled to 192x192, 0 = 1:1 in the middle, see SCALESCREEN in PlatformNDS.h
 set(SCALESCREEN 1 CACHE STRING "SCALESCREEN setting: 1 or 0")
@@ -65,7 +73,8 @@ set(ARCH_FLAGS -march=armv5te -mtune=arm946e-s -mthumb -mthumb-interwork)
 
 add_executable(${GAME_NAME}.elf ${GAME_SOURCES})
 target_compile_definitions(${GAME_NAME}.elf PRIVATE PLATFORM_NDS __NDS__ ARM9
-    SCREENBUFFER=${SCREENBUFFER} SCALESCREEN=${SCALESCREEN}
+    SCREENBUFFER=${SCREENBUFFER}
+    DITHERING=${DITHERING} SCALESCREEN=${SCALESCREEN}
     FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG})
 target_include_directories(${GAME_NAME}.elf PRIVATE "${GAME_DIR}"
     "${DEVKITPRO}/libnds/include" "${DEVKITPRO}/calico/include")

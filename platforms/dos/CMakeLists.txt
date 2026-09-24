@@ -40,6 +40,14 @@ set_property(CACHE SCREENBUFFER PROPERTY STRINGS 0 1 8 16)
 if(NOT SCREENBUFFER MATCHES "^(0|1|8|16)$")
     message(FATAL_ERROR "SCREENBUFFER has to be 0, 1, 8 or 16, not ${SCREENBUFFER}")
 endif()
+# 1 = the colours of an image are spread over the ones the buffer can hold instead of every colour
+# becoming the nearest one there is, 0 = they are not. An 8 bpp and a 1 bpp buffer have something
+# to gain from it, see DITHERING in defines.h
+set(DITHERING 0 CACHE STRING "DITHERING setting: 0 or 1")
+if(NOT DITHERING MATCHES "^(0|1)$")
+    message(FATAL_ERROR "DITHERING has to be 0 or 1, not ${DITHERING}")
+endif()
+
 
 # 1 = blown up to 240x240, as high as the screen, 0 = 1:1 in the middle, see SCALESCREEN in
 # PlatformDOS.h
@@ -67,7 +75,8 @@ list(FILTER GAME_SOURCES EXCLUDE REGEX "PlatformESPboy\\.cpp$")
 add_executable(${GAME_NAME} ${GAME_SOURCES})
 # DJGPP keeps PRIu32 and the rest behind this in C++, and the game prints its figures with them
 target_compile_definitions(${GAME_NAME} PRIVATE PLATFORM_DOS __STDC_FORMAT_MACROS=1
-    SCREENBUFFER=${SCREENBUFFER} SCALESCREEN=${SCALESCREEN} FPSLOCK=${FPSLOCK}
+    SCREENBUFFER=${SCREENBUFFER}
+    DITHERING=${DITHERING} SCALESCREEN=${SCALESCREEN} FPSLOCK=${FPSLOCK}
     FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG} IMAGESET=${IMAGESET})
 target_include_directories(${GAME_NAME} PRIVATE "${GAME_DIR}")
 # a 386 is the least a DJGPP program runs on anyway, and the game has no use for exceptions

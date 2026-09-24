@@ -42,6 +42,14 @@ set(GAME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../source/znax_embedded" CACHE PATH
 # where drawing goes, see SCREENBUFFER in PlatformPSX.h: 1, 8 or 16, the screen is never drawn to
 # straight
 set(SCREENBUFFER 16 CACHE STRING "SCREENBUFFER setting: 1, 8 or 16")
+# 1 = the colours of an image are spread over the ones the buffer can hold instead of every colour
+# becoming the nearest one there is, 0 = they are not. An 8 bpp and a 1 bpp buffer have something
+# to gain from it, see DITHERING in defines.h
+set(DITHERING 0 CACHE STRING "DITHERING setting: 0 or 1")
+if(NOT DITHERING MATCHES "^(0|1)$")
+    message(FATAL_ERROR "DITHERING has to be 0 or 1, not ${DITHERING}")
+endif()
+
 
 # 1 = scaled to 240x240, 0 = 1:1 in the middle, see SCALESCREEN in PlatformPSX.h
 set(SCALESCREEN 1 CACHE STRING "SCALESCREEN setting: 1 or 0")
@@ -59,7 +67,8 @@ list(FILTER GAME_SOURCES EXCLUDE REGEX "PlatformESPboy\.cpp$")
 
 psn00bsdk_add_executable(${GAME_NAME} GPREL ${GAME_SOURCES})
 target_compile_definitions(${GAME_NAME} PRIVATE PLATFORM_PSX
-    SCREENBUFFER=${SCREENBUFFER} SCALESCREEN=${SCALESCREEN}
+    SCREENBUFFER=${SCREENBUFFER}
+    DITHERING=${DITHERING} SCALESCREEN=${SCALESCREEN}
     FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG})
 # compat/: what PSn00bSDK's C library does not have but the game's own code includes
 target_include_directories(${GAME_NAME} PRIVATE "${GAME_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/compat")

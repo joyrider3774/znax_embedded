@@ -30,6 +30,14 @@ set_property(CACHE SCREENBUFFER PROPERTY STRINGS 0 1 8 16)
 if(NOT SCREENBUFFER MATCHES "^(0|1|8|16)$")
     message(FATAL_ERROR "SCREENBUFFER has to be 0, 1, 8 or 16, not ${SCREENBUFFER}")
 endif()
+# 1 = the colours of an image are spread over the ones the buffer can hold instead of every colour
+# becoming the nearest one there is, 0 = they are not. An 8 bpp and a 1 bpp buffer have something
+# to gain from it, see DITHERING in defines.h
+set(DITHERING 0 CACHE STRING "DITHERING setting: 0 or 1")
+if(NOT DITHERING MATCHES "^(0|1)$")
+    message(FATAL_ERROR "DITHERING has to be 0 or 1, not ${DITHERING}")
+endif()
+
 
 # -1 = the default skin, or black & white with a 1 bpp buffer, n = skin n (0 default,
 # 1 black & white), see FORCESKIN in defines.h. Change it with -DFORCESKIN=<n>
@@ -50,6 +58,10 @@ endif()
 # 1 = the debug header is always shown, 0 = Up + Down shows and hides it, see FORCEDEBUG in
 # defines.h. Change it with -DFORCEDEBUG=<n>
 set(FORCEDEBUG 0 CACHE STRING "FORCEDEBUG setting: 0 or 1")
+
+# how much bigger than the game's own size the window opens, the window can be resized
+# after, see WINDOW_SCALE in PlatformSDL.cpp
+set(WINDOW_SCALE 4 CACHE STRING "WINDOW_SCALE setting: how many times the game's size the window opens")
 set_property(CACHE FORCEDEBUG PROPERTY STRINGS 0 1)
 if(NOT FORCEDEBUG MATCHES "^(0|1)$")
     message(FATAL_ERROR "FORCEDEBUG has to be 0 or 1, not ${FORCEDEBUG}")
@@ -78,7 +90,7 @@ find_package(SDL2 REQUIRED COMPONENTS SDL2-static)
 
 # WIN32: a Windows (GUI) program, started it opens no console window next to the game's own
 add_executable(znax WIN32 ${GAME_SOURCES} ${LGFX_SOURCES})
-target_compile_definitions(znax PRIVATE PLATFORM_SDL LGFX_SDL SCREENBUFFER=${SCREENBUFFER} FPSLOCK=${FPSLOCK} FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG})
+target_compile_definitions(znax PRIVATE PLATFORM_SDL LGFX_SDL SCREENBUFFER=${SCREENBUFFER} DITHERING=${DITHERING} FPSLOCK=${FPSLOCK} FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG} WINDOW_SCALE=${WINDOW_SCALE})
 target_include_directories(znax PRIVATE "${GAME_DIR}" "${LOVYANGFX_DIR}/src")
 target_link_libraries(znax PRIVATE SDL2::SDL2-static)
 

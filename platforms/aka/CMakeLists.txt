@@ -47,6 +47,14 @@ set_property(CACHE SCREENBUFFER PROPERTY STRINGS 0 1 8 16)
 if(NOT SCREENBUFFER MATCHES "^(0|1|8|16)$")
     message(FATAL_ERROR "SCREENBUFFER has to be 0, 1, 8 or 16, not ${SCREENBUFFER}")
 endif()
+# 1 = the colours of an image are spread over the ones the buffer can hold instead of every colour
+# becoming the nearest one there is, 0 = they are not. An 8 bpp and a 1 bpp buffer have something
+# to gain from it, see DITHERING in defines.h
+set(DITHERING 0 CACHE STRING "DITHERING setting: 0 or 1")
+if(NOT DITHERING MATCHES "^(0|1)$")
+    message(FATAL_ERROR "DITHERING has to be 0 or 1, not ${DITHERING}")
+endif()
+
 
 # 1 scales the frame to 240x240 in the middle of the display, 0 shows it 1:1
 set(SCALESCREEN 1 CACHE STRING "1 to scale the frame to 240x240, 0 for 1:1")

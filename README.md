@@ -157,6 +157,9 @@ Every device is built with its own settings. These change them for all of the de
 | ------ | ------------ | ------ |
 | `--forceskin N` | `FORCESKIN`, the skin built in | `-1`, or `0` to `1` |
 | `--forcescreenbuffer N` | `SCREENBUFFER`, where drawing goes | `0`, `1`, `8` or `16` bits per pixel |
+| `--forcescale N` | `SCALESCREEN`, how the game fills the display | `1` blown up, `0` 1:1 in the middle |
+| `--forcewindowscale N` | `WINDOW_SCALE`, how big the Windows window opens | `1` to `8` times the game's size |
+| `--forcedithering N` | `DITHERING`, whether an 8 or 1 bpp buffer spreads its colours | `1` spread, `0` the nearest colour |
 | `--forcedebug` | `FORCEDEBUG 1`, the debug header is always shown | no value, on when it is given |
 
 `-1` is the default skin, or the black and white one with a 1 bpp buffer. There is no skin option in the game, so only the skin that is used is built in and `--forceskin` is what picks it.

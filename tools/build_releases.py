@@ -41,6 +41,9 @@ Usage:
   python tools/build_releases.py --forcedebug    every build shows the debug header (FORCEDEBUG 1)
   python tools/build_releases.py --forceskin 1   every build has only skin 1
   python tools/build_releases.py --forcescreenbuffer 8   every build draws into an 8 bpp buffer
+  python tools/build_releases.py --forcescale 0  every build shows the game 1:1 in the middle
+  python tools/build_releases.py --forcedithering 1   8 and 1 bpp builds spread their colours
+  python tools/build_releases.py --forcewindowscale 2   the Windows window opens at twice the game's size
   python tools/build_releases.py --list          show what would be built
 
   --arduino DIR   the Arduino IDE folder (default C:/arduino, or the ARDUINO_DIR environment variable)
@@ -883,6 +886,19 @@ def main():
     parser.add_argument("--forcescreenbuffer", type=int, metavar="N", choices=(0, 1, 8, 16),
                         help="build every device with SCREENBUFFER N: 0, 1, 8 or 16. Not every device "
                              "takes every mode, its CMakeLists.txt says which")
+    parser.add_argument("--forcescale", type=int, metavar="N", choices=(0, 1),
+                        help="build every device with SCALESCREEN N: 1 blows the game up to fill as "
+                             "much of the display as it can, 0 shows it 1:1 in the middle. Only the "
+                             "devices whose display is bigger than the game have it, see SCALESCREEN "
+                             "in their device header")
+    parser.add_argument("--forcewindowscale", type=int, metavar="N", choices=range(1, 9),
+                        help="open the Windows window at N times the game's own size, 1 to 8. Only "
+                             "the SDL build has a window, see WINDOW_SCALE in PlatformSDL.cpp")
+    parser.add_argument("--forcedithering", type=int, metavar="N", choices=(0, 1),
+                        help="build every device with DITHERING N: 1 spreads the colours of an "
+                             "image over the ones the buffer holds instead of taking the nearest "
+                             "of them, 0 takes the nearest. An 8 bpp and a 1 bpp buffer have "
+                             "something to gain from it, see DITHERING in defines.h")
     parser.add_argument("--list", action="store_true", help="list the builds and exit")
     parser.add_argument("--arduino", default=os.environ.get("ARDUINO_DIR", "C:/arduino"))
     parser.add_argument("--arduino-cli", default=os.environ.get("ARDUINO_CLI", ""),
@@ -938,6 +954,12 @@ def main():
         overrides["FORCESKIN"] = args.forceskin
     if args.forcescreenbuffer is not None:
         overrides["SCREENBUFFER"] = args.forcescreenbuffer
+    if args.forcescale is not None:
+        overrides["SCALESCREEN"] = args.forcescale
+    if args.forcedithering is not None:
+        overrides["DITHERING"] = args.forcedithering
+    if args.forcewindowscale is not None:
+        overrides["WINDOW_SCALE"] = args.forcewindowscale
 
     targets = [(device, variant, dict(defines, **overrides)) for device, variant, defines in TARGETS
                if only is None or device in only]
