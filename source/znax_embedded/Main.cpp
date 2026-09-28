@@ -67,7 +67,11 @@ static void printDebugCpuRamLoad()
             int fps_frac = (int)((frameRate - fps_int) * 100);
             //S is the least sketch stack that has been free since boot, out of 4096 bytes
             //L: is the lowest free heap since boot, in the same column as R: on the line above
-            snprintf(debuginfo, sizeof(debuginfo), "F:%3d.%2d R:%3" PRIu32 " \nS:%4" PRIu32 "   L:%3" PRIu32 " ", fps_int, fps_frac, getFreeRam(), getFreeStack(), lowestFreeRam);
+            //The figures go over as signed, which every one of these devices prints. The CHGame links a
+            //cut down snprintf that writes the signed conversions and quietly drops the unsigned ones,
+            //so "R:%u" came out as "R:" and nothing after it. None of the three ever comes near what an
+            //int holds: the largest possible is the whole of the device's RAM
+            snprintf(debuginfo, sizeof(debuginfo), "F:%3d.%2d R:%3d \nS:%4d   L:%3d ", fps_int, fps_frac, (int)getFreeRam(), (int)getFreeStack(), (int)lowestFreeRam);
             //Platform_Log("%s\n", debuginfo);
         }
         printText(0, 0, debuginfo, SCREEN.color565(255,255,255), SCREEN.color565(0,0,0), 1);

@@ -12,7 +12,14 @@ import os
 import sys
 from PIL import Image
 
+import onebit
+
 SKIN_PREFIX = {"default": "default", "black_white": "black_white"}
+#see png2rle565.py: the black & white skin is packed one bit a pixel
+ONE_BIT_SKINS = {"black_white"}
+COLOR_TRANSPARENT = 0x005F
+#the pictures png2rle565.py owns, which are not written raw as well
+RLE_IMAGES = {"background", "highscores", "intro1", "intro2", "titlescreen", "credits", "credits1", "credits2", "fixedtimer1", "fixedtimer2", "go", "highscores1", "highscores2", "play1", "play2", "ready", "relativetimer1", "relativetimer2", "selectgame", "timeover"}
 
 
 def to_rgb565(path):
@@ -50,12 +57,18 @@ def main():
     for skin, prefix in SKIN_PREFIX.items():
         os.makedirs(os.path.join(images_dir, skin), exist_ok=True)
         for png in sorted(os.listdir(os.path.join(skins_dir, skin))):
-            if not png.endswith(".png"):
+            if not png.endswith(".png") or png[:-4] in RLE_IMAGES:
                 continue
             name = png[:-4].replace("-", "_")
             width, height, pixels = to_rgb565(os.path.join(skins_dir, skin, png))
             out = os.path.join(images_dir, skin, name + "_RGB565_LE.h")
-            write_header(out, png, "%s_%s" % (prefix, name), width, height, pixels)
+            if skin in ONE_BIT_SKINS:
+                data = onebit.encode(pixels, width, height, COLOR_TRANSPARENT)
+                onebit.write_header(out, png, "%s_%s" % (prefix, name),
+                                    "%s_%s_data" % (prefix, name), width, height, data,
+                                    "png2rgb565.py")
+            else:
+                write_header(out, png, "%s_%s" % (prefix, name), width, height, pixels)
             print("%-12s %-20s %dx%d" % (skin, png, width, height))
 
 

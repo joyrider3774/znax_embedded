@@ -98,6 +98,12 @@
   #endif
 #endif
 
+//1 = the skin built in is stored one bit a pixel by tools/onebit.py and drawn by the one bit
+//routines in helperfuncs.cpp. Only the black & white skin is kept that way: it shows two
+//colours, and keeping each of them in sixteen bits costs both flash and the work of writing a
+//colour per pixel. Only one skin is ever built in, so the choice is known here
+#define ONEBITIMAGES (FORCESKIN == skinBlackWhite)
+
 #define FRAMERATE 30
 //1 = every frame waits until 1/FRAMERATE of a second has passed, 0 = a frame starts as soon
 //as the last one is done, to see how fast the game can go. The block animation and the music

@@ -19,11 +19,18 @@ import os
 import sys
 from PIL import Image
 
+import onebit
+
 FULLSCREEN_IMAGES = ["background", "highscores", "intro1", "intro2", "titlescreen"]
 WORD_IMAGES = ["credits", "credits1", "credits2", "fixedtimer1", "fixedtimer2", "go", "highscores1", "highscores2",
                "play1", "play2", "ready", "relativetimer1", "relativetimer2", "selectgame", "timeover"]
 RLE_IMAGES = FULLSCREEN_IMAGES + WORD_IMAGES
 SKIN_PREFIX = {"default": "default", "black_white": "black_white"}
+#The black & white skin shows two colours, so it is packed one bit a pixel rather than kept as
+#RGB565, which is both smaller and quicker to draw, see tools/onebit.py. The pictures keep
+#their names, the game picks the routines to draw them with at build time
+ONE_BIT_SKINS = {"black_white"}
+COLOR_TRANSPARENT = 0x005F
 MAX_COUNT = 128
 
 
@@ -104,10 +111,16 @@ def main():
         os.makedirs(os.path.join(images_dir, skin), exist_ok=True)
         for name in RLE_IMAGES:
             width, height, pixels = to_rgb565(os.path.join(skins_dir, skin, name + ".png"))
-            data = rle_encode(pixels)
-            assert rle_decode(data, len(pixels)) == pixels
             out = os.path.join(images_dir, skin, name + "_RLE565.h")
-            write_header(out, name + ".png", "%s_%s" % (prefix, name), width, height, data)
+            if skin in ONE_BIT_SKINS:
+                data = onebit.encode(pixels, width, height, COLOR_TRANSPARENT)
+                onebit.write_header(out, name + ".png", "%s_%s" % (prefix, name),
+                                    "%s_%s_rle" % (prefix, name), width, height, data,
+                                    "png2rle565.py")
+            else:
+                data = rle_encode(pixels)
+                assert rle_decode(data, len(pixels)) == pixels
+                write_header(out, name + ".png", "%s_%s" % (prefix, name), width, height, data)
             print("%-12s %-12s %6d -> %6d bytes" % (skin, name, len(pixels) * 2, len(data)))
 
 

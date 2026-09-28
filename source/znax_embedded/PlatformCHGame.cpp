@@ -30,6 +30,10 @@
 #include <malloc.h>
 #include <Arduino.h>
 #include <SPI.h>
+//for SPI1's own registers, which the pixels go out through, see SpiSend below
+extern "C" {
+#include "ch32x035.h"
+}
 #include "PlatformGamebuinoFont.h"
 
 //the save file needs a card reader. Without the library the game still runs, it just does not
@@ -66,6 +70,24 @@ PlatformDisplay& platformDisplay = display;
 PlatformBuffer screenBuffer;
 //the two colours a 1 bpp frame is shown in, high byte first as the display takes them
 static uint8_t bufferSetColor[2] = { 0xFF, 0xFF }, bufferClearColor[2] = { 0x00, 0x00 };
+//The eight pixels of every byte a 1 bpp buffer can hold, ready for the display. Working them out
+//a pixel at a time cost 18 of the 44 ms a frame took, as much as the whole transfer; this way a
+//row is sixteen copies of sixteen bytes. It is 4 KB of the 20, and is built again whenever the
+//two colours change
+static uint8_t bufferExpand[256][16];
+
+static void BuildExpandTable(void)
+{
+	for (int i = 0; i < 256; i++)
+	{
+		for (int b = 0; b < 8; b++)
+		{
+			const uint8_t* color = (i & (0x80 >> b)) ? bufferSetColor : bufferClearColor;
+			bufferExpand[i][b * 2] = color[0];
+			bufferExpand[i][b * 2 + 1] = color[1];
+		}
+	}
+}
 #endif
 
 //Pixels are handed to the SPI in RAM lumps rather than a byte at a time: a call per byte costs
@@ -96,16 +118,114 @@ void loop()
 // SPI and the panel's lines
 // ===========================================================================
 
-//sends bytes that are already in RAM. The buffer is the library's to write over, which with
-//transmit only it does not, but nothing here hands it anything it would mind losing
-static inline void SpiSend(uint8_t* data, size_t length)
+//Bytes go out through SPI1's own register rather than through the library. Its transfer waits on
+//the flag through a function call and asks the tick counter twice a byte to see whether it has
+//timed out, which is around a hundred thousand calls for a frame of 32 KB: the game ran at 8
+//frames a second with them and the wire itself only takes 11 ms of the 33 a frame has. The panel
+//is only ever written to, so nothing is read back and the receive buffer is left to overrun.
+//SPI.beginTransaction still sets the clock and the mode, only the data goes this way
+static inline void SpiSend(const uint8_t* data, size_t length)
 {
-	SPI.transfer(data, length);
+	while (length--)
+	{
+		while (!(SPI1->STATR & SPI_STATR_TXE))
+			;
+		SPI1->DATAR = *data++;
+	}
 }
 
 static inline void SpiSendByte(uint8_t value)
 {
-	SPI.transfer(value);
+	while (!(SPI1->STATR & SPI_STATR_TXE))
+		;
+	SPI1->DATAR = value;
+}
+
+//waits for the last byte to leave, before the data/command line or the chip select moves
+static inline void SpiWait(void)
+{
+	while (SPI1->STATR & SPI_STATR_BSY)
+		;
+}
+
+// ---------------------------------------------------------------------------
+// The pixels go out by DMA
+//
+// Feeding the register by hand only keeps the wire half busy: the clock really is 24 MHz, but the
+// loop cannot fetch, test and store fast enough out of flash to hand it a byte every 16 cycles, so
+// a frame took 22 ms where the bytes themselves are 11. DMA1 channel 3 is SPI1's transmit request,
+// and once it is started the frame costs what its bytes cost and the processor is free to build
+// the next row meanwhile. This is what CHGfx does, and why it reaches the wire's own limit
+// ---------------------------------------------------------------------------
+
+//Memory to peripheral, a byte at a time, the memory address stepping and the peripheral's standing
+//still, at the highest priority. The names are the chip header's own: leaving MINC out sends the
+//first byte over and over, and channel 3's finished flag is 0x200 where 0x20 is channel 2's
+#define DMA_CFGR_TO_SPI (DMA_CFGR1_DIR | DMA_CFGR1_MINC | DMA_CFGR1_PL)
+#define DMA_CFGR_ENABLE DMA_CFGR1_EN
+#define DMA_FLAG_TC3 DMA1_FLAG_TC3
+//all four of channel 3's flags, cleared together as CHGfx does
+#define DMA_FLAGS_CH3 ((uint32_t)0x00000F00)
+
+static bool dmaBusy = false;
+
+static void DmaInit(void)
+{
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+	DMA1_Channel3->CFGR = 0;
+	DMA1_Channel3->PADDR = (uint32_t)&SPI1->DATAR;
+	SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;
+}
+
+//Set once the DMA has been seen not to work, after which the rows go out by hand instead. A frame
+//that never finishes would leave the screen black and nothing to read, which is exactly what a
+//wrong channel or a wrong flag did while this was being written
+static bool dmaBroken = false;
+
+//hands the bytes over and returns at once, they are on their way while this goes on
+static void DmaSend(const uint8_t* data, uint16_t length)
+{
+	if (dmaBroken)
+	{
+		SpiSend(data, length);
+		return;
+	}
+	//The order is CHGfx's, which is the one that works: the transmit request is turned off while
+	//the channel is set up, the settings are written without the enable bit, the request is turned
+	//on, and only then is the channel started. SPI.beginTransaction also puts CTLR2 back as it was
+	//for every transaction, so the request is asked for here and not once at the start
+	SPI1->CTLR2 &= (uint16_t)~SPI_I2S_DMAReq_Tx;
+	DMA1_Channel3->CFGR = 0;
+	DMA1->INTFCR = DMA_FLAGS_CH3;
+	DMA1_Channel3->MADDR = (uint32_t)data;
+	DMA1_Channel3->CNTR = length;
+	DMA1_Channel3->CFGR = DMA_CFGR_TO_SPI;
+	SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;
+	DMA1_Channel3->CFGR |= DMA_CFGR_ENABLE;
+	dmaBusy = true;
+}
+
+static void DmaWait(void)
+{
+	if (!dmaBusy)
+		return;
+	//A row is 256 bytes, which at 24 MHz is about 85 us. This waits many times longer than that
+	//and then gives up rather than standing here for good
+	uint32_t spins = 2000000;
+	while (!(DMA1->INTFR & DMA_FLAG_TC3))
+	{
+		if (--spins == 0)
+		{
+			dmaBroken = true;
+			break;
+		}
+	}
+	DMA1_Channel3->CFGR = 0;
+	DMA1->INTFCR = DMA_FLAGS_CH3;
+	SPI1->CTLR2 &= (uint16_t)~SPI_I2S_DMAReq_Tx;
+	dmaBusy = false;
+	//the last byte sits in the shift register for a while after the DMA has done with it
+	SpiWait();
 }
 
 //see the note at the top: the panel takes a drifting reset line for a real reset
@@ -114,10 +234,14 @@ static inline void ResetDriveHigh(void)
 	digitalWrite(PIN_LCD_RST, HIGH);
 }
 
+//The data/command line only means anything while the byte it belongs to is on the wire, so it is
+//moved with the wire idle on both sides of the command
 static void WriteCommand(uint8_t command)
 {
+	SpiWait();
 	digitalWrite(PIN_LCD_DC, LOW);
 	SpiSendByte(command);
+	SpiWait();
 	digitalWrite(PIN_LCD_DC, HIGH);
 }
 
@@ -170,8 +294,12 @@ static void RunCommands(const uint8_t* list)
 		while (args--)
 			SpiSendByte(*list++);
 		if (delayAfter)
+		{
+			SpiWait();
 			delay(*list++);
+		}
 	}
+	SpiWait();
 	digitalWrite(PIN_LCD_CS, HIGH);
 	SPI.endTransaction();
 }
@@ -236,6 +364,8 @@ void PlatformCHGameDisplay::endWrite(void)
 {
 	if (writeDepth && (--writeDepth == 0))
 	{
+		//the chip select only goes up once the last byte has really left
+		SpiWait();
 		digitalWrite(PIN_LCD_CS, HIGH);
 		SPI.endTransaction();
 	}
@@ -295,12 +425,6 @@ void PlatformCHGameDisplay::writeColor(uint16_t color, uint32_t length)
 	while (length)
 	{
 		const uint32_t run = (length > filled) ? filled : length;
-		//the library may write over what it was given, so the lump is rebuilt when it does
-		for (uint32_t i = 0; i < run; i++)
-		{
-			spiChunk[i * 2] = high;
-			spiChunk[i * 2 + 1] = low;
-		}
 		SpiSend(spiChunk, (size_t)run * 2);
 		length -= run;
 	}
@@ -309,15 +433,9 @@ void PlatformCHGameDisplay::writeColor(uint16_t color, uint32_t length)
 
 void PlatformCHGameDisplay::writeBytes(const uint8_t* data, uint32_t length)
 {
+	//nothing is written over what it is given any more, so the caller's bytes go out where they lie
 	startWrite();
-	while (length)
-	{
-		const uint32_t run = (length > sizeof(spiChunk)) ? sizeof(spiChunk) : length;
-		memcpy(spiChunk, data, run);
-		SpiSend(spiChunk, run);
-		data += run;
-		length -= run;
-	}
+	SpiSend(data, length);
 	endWrite();
 }
 
@@ -477,6 +595,8 @@ void PlatformCHGameBuffer::fillRect(int32_t x, int32_t y, int32_t w, int32_t h, 
 void Platform_Init(const char* appName)
 {
 	display.init();
+	//after the display, so the SPI is already up when its transmit request is turned on
+	DmaInit();
 	StorageInit(appName);
 
 	//the buzzer is driven by tone(), which sets the pin up itself
@@ -497,6 +617,8 @@ void Platform_Init(const char* appName)
 
 #if SCREENBUFFER
 	screenBuffer.setColorDepth(SCREENBUFFER);
+	//black and white until the game says otherwise, so the table is never read unbuilt
+	BuildExpandTable();
 	if (!screenBuffer.createSprite(WINDOW_WIDTH, WINDOW_HEIGHT))
 		Platform_Log("screen buffer could not be allocated\n");
 #endif
@@ -511,39 +633,82 @@ void Platform_SetBufferColors(uint16_t setColor, uint16_t clearColor)
 	bufferSetColor[1] = (uint8_t)setColor;
 	bufferClearColor[0] = (uint8_t)(clearColor >> 8);
 	bufferClearColor[1] = (uint8_t)clearColor;
+	//the table holds these two colours, so it is built again whenever they change
+	BuildExpandTable();
 #else
 	(void)setColor;
 	(void)clearColor;
 #endif
 }
 
+//Temporary: says over the USB serial where a frame's time goes, so the part worth working on is
+//known rather than guessed. Build with -DCHGAME_TIMING=1 and -DFPSLOCK=0, or the frame lock hides
+//the answer by waiting out whatever is left of the 33 ms
+#ifndef CHGAME_TIMING
+#define CHGAME_TIMING 0
+#endif
+
 void Platform_PresentFrame(void)
 {
+#if CHGAME_TIMING
+	static uint32_t sendSum = 0, buildSum = 0, frameSum = 0, lastStart = 0;
+	static uint16_t counted = 0;
+	const uint32_t tStart = micros();
+	uint32_t buildUs = 0;
+#endif
 #if SCREENBUFFER
 	const uint8_t* src = (const uint8_t*)SCREENBUFFER_PIXELS();
 	if (!src)
 		return;
-	//a row at a time, turned into the bytes the display takes
-	uint8_t line[WINDOW_WIDTH * 2];
+	//Two rows, so the one being built is never the one on the wire. The row is turned into the
+	//display's bytes while the row before it is still going out, which is what keeps the wire from
+	//ever standing idle
+	static uint8_t lines[2][WINDOW_WIDTH * 2];
+	uint8_t which = 0;
 	display.startWrite();
 	display.setAddrWindow(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 	for (int16_t y = 0; y < WINDOW_HEIGHT; y++)
 	{
+		uint8_t* line = lines[which];
+		which ^= 1;
+#if CHGAME_TIMING
+		const uint32_t tRow = micros();
+#endif
 		uint8_t* dst = line;
-		//a byte of the buffer at a time, most significant bit first as SetBufferBit writes
-		for (int16_t x = 0; x < WINDOW_WIDTH; x += 8)
-		{
-			uint8_t bits = *src++;
-			for (uint8_t b = 0; b < 8; b++, bits <<= 1)
-			{
-				const uint8_t* color = (bits & 0x80) ? bufferSetColor : bufferClearColor;
-				*dst++ = color[0];
-				*dst++ = color[1];
-			}
-		}
-		display.writeBytes(line, sizeof(line));
+		//a byte of the buffer is eight pixels the table already holds
+		for (int16_t x = 0; x < WINDOW_WIDTH; x += 8, dst += 16)
+			memcpy(dst, bufferExpand[*src++], 16);
+#if CHGAME_TIMING
+		buildUs += micros() - tRow;
+#endif
+		//the row before this one is given until now to finish, then this one goes on its way and
+		//the next is built while it travels
+		DmaWait();
+		DmaSend(line, WINDOW_WIDTH * 2);
 	}
+	DmaWait();
 	display.endWrite();
+#endif
+#if CHGAME_TIMING
+	const uint32_t tEnd = micros();
+	sendSum += (tEnd - tStart) - buildUs;
+	buildSum += buildUs;
+	if (lastStart)
+		frameSum += tStart - lastStart;
+	lastStart = tStart;
+	if (++counted >= 30)
+	{
+		//the frame is everything between one present and the next: the game's own drawing is
+		//whatever is left once the two below are taken off it
+		Platform_Log("frame %6lu us  build %5lu  send %5lu  game %6lu  heap %5lu  stack %4lu%s\n",
+		             (unsigned long)(frameSum / counted), (unsigned long)(buildSum / counted),
+		             (unsigned long)(sendSum / counted),
+		             (unsigned long)((frameSum - buildSum - sendSum) / counted),
+		             (unsigned long)Platform_FreeHeap(), (unsigned long)Platform_FreeStack(),
+		             dmaBroken ? "  (DMA gave up, rows go out by hand)" : "");
+		sendSum = buildSum = frameSum = 0;
+		counted = 0;
+	}
 #endif
 }
 
@@ -612,36 +777,47 @@ uint32_t Platform_Millis(void)
 	return millis();
 }
 
-extern "C" char* sbrk(int increment);
+//Where the linker put things, from link_chgame_app.ld. This chip does not lay its RAM out the way
+//the Gamebuino does: there the heap grows up and the stack down into one shared gap, here the
+//stack is a region of its own of __stack_size bytes at the very top and the heap has a ceiling of
+//its own below it. So the two are measured apart, and neither can be worked out from the other
+extern "C" {
+extern char _end[];         //the end of the program's data, where the heap starts
+extern char _heap_end[];    //as far up as the heap may ever grow
+extern char _susrstack[];   //the bottom of the stack, which is as far down as it may grow
+extern char _eusrstack[];   //the top of RAM, where the stack starts and grows downwards
+}
 
-//The heap grows up from the end of the program's data, the stack down from the end of RAM. Free
-//heap is the gap between them plus what malloc has been given back
+//What is left for the heap: the part of its room it has not asked for yet, and what it has asked
+//for but handed back. sbrk is not used, the C library here does not have to offer one
 uint32_t Platform_FreeHeap(void)
 {
-	char* stackTop = (char*)__builtin_frame_address(0);
-	return (uint32_t)(stackTop - sbrk(0)) + (uint32_t)mallinfo().fordblks;
+	const struct mallinfo info = mallinfo();
+	const uint32_t room = (uint32_t)(_heap_end - _end);
+	const uint32_t taken = (uint32_t)info.arena;
+	return (taken > room ? 0 : room - taken) + (uint32_t)info.fordblks;
 }
 
 #define STACK_PAINT 0xA5
 
-//fills the gap between heap and stack with a pattern, what the stack reaches overwrites it
+//Fills the stack below what is in use with a pattern. What the stack reaches later writes over it,
+//so what is left of it says how close the stack has ever come to the bottom
 static void PaintStack(void)
 {
-	char* from = sbrk(0);
-	//a little room below this function's own frame for the calls it makes
+	//everything under this function's own frame, with a little room for the calls it makes
 	char* to = (char*)__builtin_frame_address(0) - 64;
-	for (char* p = from; p < to; p++)
+	if (to > _eusrstack)
+		to = _eusrstack;
+	for (char* p = _susrstack; p < to; p++)
 		*p = (char)STACK_PAINT;
 }
 
-//the least stack that has been free since Platform_Init: the pattern left above the heap. Heap
-//taken since then counts as used as well, heap and stack share the same gap
+//the least stack that has been free since Platform_Init: the pattern still standing at the bottom
 uint32_t Platform_FreeStack(void)
 {
-	char* p = sbrk(0);
-	const char* limit = (char*)__builtin_frame_address(0);
+	const char* p = _susrstack;
 	uint32_t count = 0;
-	while ((p < limit) && (*p == (char)STACK_PAINT))
+	while ((p < _eusrstack) && (*p == (char)STACK_PAINT))
 	{
 		p++;
 		count++;
