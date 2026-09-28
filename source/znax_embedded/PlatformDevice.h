@@ -16,7 +16,7 @@
 //PLATFORM_PSP and the PlayStation Vita build (vita/CMakeLists.txt) PLATFORM_VITA,
 //an Arduino build is picked from the defines the board package of the board selected in the IDE sets.
 //A build can still define one of the PLATFORM_ names itself, then nothing is detected
-#if !defined(PLATFORM_SDL) && !defined(PLATFORM_WEB) && !defined(PLATFORM_DOS) && !defined(PLATFORM_PLAYDATE) && !defined(PLATFORM_LIBRETRO) && !defined(PLATFORM_GBA) && !defined(PLATFORM_NDS) && !defined(PLATFORM_3DS) && !defined(PLATFORM_PSX) && !defined(PLATFORM_N64) && !defined(PLATFORM_PSP) && !defined(PLATFORM_VITA) && !defined(PLATFORM_GAMEBUINO) && !defined(PLATFORM_ESPBOY) && !defined(PLATFORM_PYBADGE) && !defined(PLATFORM_PICOSYSTEM) && !defined(PLATFORM_EXPLORER) && !defined(PLATFORM_TUFTY) && !defined(PLATFORM_THUMBY) && !defined(PLATFORM_AKA)
+#if !defined(PLATFORM_SDL) && !defined(PLATFORM_WEB) && !defined(PLATFORM_DOS) && !defined(PLATFORM_PLAYDATE) && !defined(PLATFORM_LIBRETRO) && !defined(PLATFORM_GBA) && !defined(PLATFORM_NDS) && !defined(PLATFORM_3DS) && !defined(PLATFORM_PSX) && !defined(PLATFORM_N64) && !defined(PLATFORM_PSP) && !defined(PLATFORM_VITA) && !defined(PLATFORM_GAMEBUINO) && !defined(PLATFORM_ESPBOY) && !defined(PLATFORM_PYBADGE) && !defined(PLATFORM_PICOSYSTEM) && !defined(PLATFORM_EXPLORER) && !defined(PLATFORM_TUFTY) && !defined(PLATFORM_THUMBY) && !defined(PLATFORM_AKA) && !defined(PLATFORM_CHGAME)
   #if defined(ADAFRUIT_PYBADGE_M4_EXPRESS) || defined(ADAFRUIT_PYGAMER_M4_EXPRESS)
     //Adafruit's board package, the PyGamer builds the same code with its joystick as the d-pad
     #define PLATFORM_PYBADGE 1
@@ -28,6 +28,10 @@
     //Arduino Zero (and the Adafruit M0 boards that also call themselves SAMD_ZERO) builds as a
     //META too. The MKR boards have a board name of their own and do not
     #define PLATFORM_GAMEBUINO 1
+  #elif defined(ARDUINO_ARCH_CH32)
+    //the CHGame's board package (github.com/bateske/CH32SerialBoot) has the one board, and it is
+    //the only package here that builds for a CH32
+    #define PLATFORM_CHGAME 1
   #elif defined(ARDUINO_PIMORONI_EXPLORER)
     //the arduino-pico core's Pimoroni Explorer board, checked before any other board of that core
     #define PLATFORM_EXPLORER 1
@@ -46,7 +50,7 @@
     //RP2040 board (flash size 16 MB). Any other board of that core builds for it
     #define PLATFORM_PICOSYSTEM 1
   #else
-    #error "unsupported board: pick an ESP8266 board for the ESPboy (LOLIN(WEMOS) D1 mini), the Gamebuino META, the Adafruit PyBadge or PyGamer M4 Express, Generic RP2040 for the PicoSystem, Pimoroni Explorer, or Generic RP2350 for the Tufty 2350 (chip variant RP2350B) and the Thumby Color (chip variant RP2350A)"
+    #error "unsupported board: pick an ESP8266 board for the ESPboy (LOLIN(WEMOS) D1 mini), the Gamebuino META, the Adafruit PyBadge or PyGamer M4 Express, Generic RP2040 for the PicoSystem, Pimoroni Explorer, or Generic RP2350 for the Tufty 2350 (chip variant RP2350B) and the Thumby Color (chip variant RP2350A), or CHGame"
   #endif
 #endif
 
@@ -64,6 +68,8 @@
 #include "PlatformTufty.h"
 #elif defined(PLATFORM_THUMBY)
 #include "PlatformThumby.h"
+#elif defined(PLATFORM_CHGAME)
+#include "PlatformCHGame.h"
 #elif defined(PLATFORM_AKA)
 #include "PlatformAka.h"
 #elif defined(PLATFORM_SDL)

@@ -38,6 +38,12 @@
 #error "SCREENBUFFER has to be 0, 1, 8 or 16 on the GBA"
 #endif
 
+//The program is read from the cartridge, which the processor waits on, while the internal work RAM
+//it is copied into at the start answers at once. The loops that run once for every pixel are worth
+//the room there, the rest is not: there are 32 KB of it and the variables live in it too. This is
+//what libgba's IWRAM_CODE is, written out so that this header does not need libgba's own
+#define PLATFORM_FAST_CODE __attribute__((section(".iwram"), long_call))
+
 //1 = the screen buffer is in IWRAM, the GBA's fast memory, 0 = in EWRAM. Everything the game draws
 //goes through the buffer, so IWRAM is a great deal faster, but IWRAM is only 32 KB and the game's own
 //globals live there as well: a game with big globals has no room for it and the build says so
@@ -102,13 +108,13 @@ protected:
 class PlatformGBADisplay : public PlatformGBAGFX
 {
 public:
-	void fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t color) override;
+	PLATFORM_FAST_CODE void fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t color) override;
 	//the area the pixels written next fill, left to right and top to bottom
 	void setAddrWindow(int32_t x, int32_t y, int32_t w, int32_t h);
 	//swap true: the values are plain RGB565. False: they are byte swapped
-	void writePixels(const uint16_t* data, int32_t length, bool swap = true);
+	PLATFORM_FAST_CODE void writePixels(const uint16_t* data, int32_t length, bool swap = true);
 	//length pixels of one RGB565 colour
-	void writeColor(uint16_t color, uint32_t length);
+	PLATFORM_FAST_CODE void writeColor(uint16_t color, uint32_t length);
 };
 
 //An off screen buffer of the game's size, 1, 8 or 16 bits per pixel, laid out the way LovyanGFX's

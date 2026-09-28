@@ -41,6 +41,15 @@
 #error "the device header has to define SCREENBUFFER"
 #endif
 
+//Marks a function worth keeping in the fastest memory the device has. Only the Game Boy Advance
+//has any use for it: its program is read from the cartridge with wait states, so a loop that runs
+//once for every pixel is several times slower from there than from the internal work RAM. The
+//space is small, so only the few calls that touch every pixel are marked. A device header sets
+//this to whatever its toolchain wants, everywhere else it is nothing
+#ifndef PLATFORM_FAST_CODE
+#define PLATFORM_FAST_CODE
+#endif
+
 //1 when data in flash is plain memory that can be read through a pointer of its own type.
 //Only the ESP8266 has to go through PLATFORM_READ_xxx, and where a few pixels are read at a
 //time its memcpy costs more than reading them where they lie. A device header sets this to 0

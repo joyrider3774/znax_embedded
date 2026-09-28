@@ -5,6 +5,7 @@ Every file is named <device>_<game><variant>.<ext>, for example PicoSystem_Znax.
 
   ESPboy         .bin   the board is a LOLIN(WEMOS) D1 mini
   GamebuinoMeta  .bin   copy it into a folder on the SD card, the .hex is for flashing it directly
+  CHGame         .bin   plug it in, pick the port and upload, its bootloader takes it over USB
   PyBadge        .uf2   double press reset and copy it onto the drive that appears
   PyGamer        .uf2   same as the PyBadge
   PicoSystem     .uf2   hold X while switching on and copy it onto the drive that appears
@@ -27,7 +28,8 @@ Every file is named <device>_<game><variant>.<ext>, for example PicoSystem_Znax.
 
 The settings of a build (SCREENBUFFER, SCALESCREEN, ...) are passed to the compiler as defines, the
 device headers only use their own values for what a build does not set. The sources are not
-touched. What is built for each device is listed in TARGETS below.
+touched. What is built for each device is listed in TARGETS below, except the ones marked
+"request" in DEVICES, which are only built by a run that names them with --only.
 
 Needs the Arduino IDE 1.8 folder with the board packages (arduino-builder) and, for the Windows
 build, MSYS2 with the mingw64 cmake, ninja, gcc and SDL2 packages. The Playdate build needs the Playdate
@@ -98,6 +100,8 @@ SKINS = 2
 TARGETS = [
     ("ESPboy", "", {}),
     ("GamebuinoMeta", "", {}),
+    # only built when it is asked for by name, see "request" in DEVICES
+    ("CHGame", "", {}),
     ("PyBadge", "", {}),
     ("PyGamer", "", {}),
     ("PicoSystem", "", {}),
@@ -152,6 +156,26 @@ DEVICES = {
         # games are called Sokoban and Waternet already, so these carry this repository's name
         # and sit beside them instead of on top of them
         "folder": GAME + "_embedded",
+    },
+    "CHGame": {
+        # Kevin Bates' CH32X035 handheld, board package github.com/bateske/CH32SerialBoot. It is
+        # only published for the Arduino IDE 2, whose packages the IDE 1.8 folder does not hold,
+        # so this device is built with the CLI that IDE ships:
+        #   python tools/build_releases.py --only CHGame \
+        #       --arduino-cli "C:/arduino2/resources/app/lib/backend/resources/arduino-cli.exe"
+        "fqbn": "CHGame:ch32v:CHGame",
+        # Only built when --only names it. The game does not fit this device yet, see the note
+        # below, and a run that did not ask for it should not fail over that
+        "request": True,
+        # The package brings its own riscv-none-embed-gcc, there is nothing to pin, and the board's
+        # own menu builds at -Os, which is what a device this tight wants
+        "outputs": ["bin"],
+        # THE GAME DOES NOT FIT THIS DEVICE YET. The bootloader keeps the first 12 KB of the 62 KB
+        # of flash and the game gets 50944 bytes, where an empty sketch is 8764 of them. Nearly all
+        # of what is over is the artwork: the images are included into helperfuncs.cpp, and that
+        # one object is most of the build. The code and the core together are the part that would
+        # fit. The way in is the microSD slot the board already has, with the images read from a
+        # file through PLATFORM_READ_BYTES rather than kept in flash
     },
     "PyBadge": {
         "fqbn": "adafruit:samd:adafruit_pybadge_m4",
@@ -976,8 +1000,15 @@ def main():
     if args.forcewindowscale is not None:
         overrides["WINDOW_SCALE"] = args.forcewindowscale
 
+    def asked_for(device):
+        """A device marked "request" is only built by a run that names it: the game does not fit
+        the CHGame yet, and a run that did not ask for it should not fail over that"""
+        if only is not None:
+            return device in only
+        return not DEVICES[device].get("request", False)
+
     targets = [(device, variant, dict(defines, **overrides)) for device, variant, defines in TARGETS
-               if only is None or device in only]
+               if asked_for(device)]
     if args.list:
         for device, variant, defines in targets:
             outs = [o.split()[0] for o in DEVICES[device]["outputs"]]
