@@ -89,6 +89,7 @@ Every [release](https://github.com/joyrider3774/znax_embedded/releases) has a bu
 | [PlayStation](https://en.wikipedia.org/wiki/PlayStation_(console)) | PSX_Znax.exe | open it in an emulator or send it to a console that runs unsigned code, the progress is not saved yet |
 | [PlayStation Portable](https://en.wikipedia.org/wiki/PlayStation_Portable) | PSP_Znax.PBP | rename it to EBOOT.PBP and put it in ms0:/PSP/GAME/Znax/ on the memory stick, or open it in PPSSPP |
 | [PlayStation Vita](https://en.wikipedia.org/wiki/PlayStation_Vita) | Vita_Znax.vpk | install it with VitaShell on a Vita with homebrew enabled, or open it in Vita3K |
+| [CHGame](https://github.com/bateske/CH32SerialBoot) | `CHGame_Znax.bin` | flash it over USB with the `chgame-upload` that comes with the board package: `chgame-upload -port COM6 flash CHGame_Znax.bin -run`. |
 | Windows | Windows_Znax.exe | runs on its own, the high scores are saved next to it in Znax.sav |
 | MS-DOS | DOS_Znax.zip | unzip ZNAX.EXE onto a DOS machine or into DOSBox and run it, the high scores are saved next to it in ZNAX.SAV |
 | MS-DOS, not dithered | DOS_Znax_ND.zip | the same program with `DITHERING` 0, unzip ZNAX_ND.EXE and run it the same way. On a 256 colour screen a shade the palette has no colour for is the nearer one it does have, instead of a pattern of the two |
@@ -129,6 +130,7 @@ The script looks for everything in the place it is installed in here. A tool som
 | ------ | ----------------- | -------------------------------- |
 | `--arduino-cli PATH` | arduino-cli, which builds the Arduino devices | `ARDUINO_CLI` |
 | `--arduino DIR` | the Arduino IDE 1.8 folder, used when there is no arduino-cli | `C:/arduino`, `ARDUINO_DIR` |
+| `--arduino2 DIR` | the Arduino IDE 2 folder, whose own arduino-cli builds the CHGame | `C:/arduino2`, `ARDUINO2_DIR` |
 | `--lovyangfx DIR` | LovyanGFX for the Windows build, when it is not the one in the sketchbook | `LOVYANGFX_DIR` |
 | `--msys2 DIR` | MSYS2's mingw64 bin folder, for cmake and ninja | `C:/msys64/mingw64/bin`, `MSYS2_BIN` |
 | `--playdate-sdk DIR` | the Playdate SDK | `C:/playdate/PlaydateSDK`, `PLAYDATE_SDK_PATH` |
@@ -182,9 +184,17 @@ The Arduino devices are built with arduino-cli 1.5.1 and the versions below. The
 | Gamebuino META | gamebuino:samd 1.2.2 | Gamebuino META 1.3.3 |
 | Adafruit PyBadge, PyGamer | adafruit:samd 1.7.16 | Adafruit GFX Library 1.12.6, Adafruit ST7735 and ST7789 Library 1.5.15, Adafruit BusIO 1.17.4, Adafruit NeoPixel 1.15.5, Adafruit SPIFlash 5.1.1 |
 | PicoSystem, Explorer, Tufty 2350, Thumby Color | rp2040:rp2040 5.5.0 | none, everything they use comes with the core |
+| CHGame | CHGame:ch32v 0.2.2 | none, the core brings its own riscv-none-embed-gcc |
 
 The ESPboy draws through LovyanGFX and only includes TFT_eSPI's header, so the exact TFT_eSPI does not matter much.  
 The Gamebuino's core needs Arduino's own arduino:samd 1.8.14 beside it for sam.h, without it the build stops at "sam.h: No such file or directory".  
+The CHGame's board package is only published for the Arduino IDE 2, so that device is built with the
+arduino-cli that IDE 2 ships (`--arduino2`) while the rest use the IDE 1.8 folder, in the same run.
+Its CH32X035 has 50944 bytes of flash for the game and 20464 bytes of RAM, so it builds the black &
+white skin alone and nothing else: every picture is packed one bit a pixel instead of as RGB565,
+which is what makes the game fit at all. See `FORCESKIN` and `ONEBITIMAGES` in `defines.h` and
+`source/*/PlatformCHGame.h`.
+
 The Windows build draws through the same LovyanGFX 1.1.9, see `platforms/windows/CMakeLists.txt`.
 
 ### Toolchains

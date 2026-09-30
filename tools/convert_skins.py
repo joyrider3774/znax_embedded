@@ -42,21 +42,19 @@ def header_name(png):
 
 
 def convert_image(skins_dir, skin, png, out_dir):
-    """Writes the header for one skin image into out_dir/skin, returns its file name."""
+    """Writes the header for one skin image into out_dir/skin, returns its file name.
+
+    Which format it is written in is the converter's own choice, so it is left to them: the
+    black & white skin is packed one bit a pixel, see tools/onebit.py."""
     prefix = png2rgb565.SKIN_PREFIX[skin]
     src = os.path.join(skins_dir, skin, png)
     header = header_name(png)
     out = os.path.join(out_dir, skin, header)
     name = png[:-4]
     if header.endswith("_RLE565.h"):
-        width, height, pixels = png2rle565.to_rgb565(src)
-        data = png2rle565.rle_encode(pixels)
-        # never write something that does not decode back to the image
-        assert png2rle565.rle_decode(data, len(pixels)) == pixels, src
-        png2rle565.write_header(out, png, "%s_%s" % (prefix, name), width, height, data)
+        png2rle565.convert(src, out, "%s_%s" % (prefix, name), skin)
     else:
-        width, height, pixels = png2rgb565.to_rgb565(src)
-        png2rgb565.write_header(out, png, "%s_%s" % (prefix, name.replace("-", "_")), width, height, pixels)
+        png2rgb565.convert(src, out, "%s_%s" % (prefix, name.replace("-", "_")), skin)
     return header
 
 

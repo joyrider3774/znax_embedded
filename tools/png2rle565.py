@@ -103,6 +103,22 @@ def write_header(path, source_name, var, width, height, data):
         f.write("\n".join(lines) + "\n")
 
 
+def convert(src, out, var, skin):
+    """Writes the header for one full screen picture into out, in the format its skin is stored
+    in. Every caller wants that same choice made, so it is made here and not in each of them."""
+    width, height, pixels = to_rgb565(src)
+    if skin in ONE_BIT_SKINS:
+        data = onebit.encode(pixels, width, height, COLOR_TRANSPARENT)
+        onebit.write_header(out, os.path.basename(src), var, var + "_rle", width, height, data,
+                            "png2rle565.py")
+    else:
+        data = rle_encode(pixels)
+        #never write something that does not decode back to the picture
+        assert rle_decode(data, len(pixels)) == pixels, src
+        write_header(out, os.path.basename(src), var, width, height, data)
+    return width, height, len(data)
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     skins_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "..", "assets", "skins")
@@ -110,18 +126,10 @@ def main():
     for skin, prefix in SKIN_PREFIX.items():
         os.makedirs(os.path.join(images_dir, skin), exist_ok=True)
         for name in RLE_IMAGES:
-            width, height, pixels = to_rgb565(os.path.join(skins_dir, skin, name + ".png"))
             out = os.path.join(images_dir, skin, name + "_RLE565.h")
-            if skin in ONE_BIT_SKINS:
-                data = onebit.encode(pixels, width, height, COLOR_TRANSPARENT)
-                onebit.write_header(out, name + ".png", "%s_%s" % (prefix, name),
-                                    "%s_%s_rle" % (prefix, name), width, height, data,
-                                    "png2rle565.py")
-            else:
-                data = rle_encode(pixels)
-                assert rle_decode(data, len(pixels)) == pixels
-                write_header(out, name + ".png", "%s_%s" % (prefix, name), width, height, data)
-            print("%-12s %-12s %6d -> %6d bytes" % (skin, name, len(pixels) * 2, len(data)))
+            width, height, encoded = convert(os.path.join(skins_dir, skin, name + ".png"), out,
+                                             "%s_%s" % (prefix, name), skin)
+            print("%-12s %-12s %6d -> %6d bytes" % (skin, name, width * height * 2, encoded))
 
 
 if __name__ == "__main__":

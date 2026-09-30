@@ -22,6 +22,10 @@ env:
   CORE_GAMEBUINO: 1.2.2
   CORE_ADAFRUIT_SAMD: 1.7.16
   CORE_RP2040: 5.5.0
+  # Kevin Bates' CH32X035 handheld. Its package is only published for the Arduino IDE 2 on a desktop,
+  # but it is an ordinary board manager index, so arduino-cli installs it here like any other. It
+  # brings its own riscv-none-embed-gcc, including an x86_64-linux-gnu build
+  CORE_CHGAME: 0.2.2
   # the Gamebuino's core uses Arduino's own CMSIS-Atmel tool package for sam.h, which comes with the
   # arduino:samd core: without it the build stops at "sam.h: No such file or directory"
   CORE_ARDUINO_SAMD: 1.8.14
@@ -214,13 +218,15 @@ jobs:
             https://arduino.esp8266.com/stable/package_esp8266com_index.json \
             https://gamebuino.com/sdk/package_gamebuino_index.json \
             https://adafruit.github.io/arduino-board-index/package_adafruit_index.json \
-            https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+            https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json \
+            https://github.com/bateske/CH32SerialBoot/releases/latest/download/package_chgame_index.json
           arduino-cli core update-index
           arduino-cli core install esp8266:esp8266@${CORE_ESP8266}
           arduino-cli core install gamebuino:samd@${CORE_GAMEBUINO}
           arduino-cli core install adafruit:samd@${CORE_ADAFRUIT_SAMD}
           arduino-cli core install rp2040:rp2040@${CORE_RP2040}
           arduino-cli core install arduino:samd@${CORE_ARDUINO_SAMD}
+          arduino-cli core install CHGame:ch32v@${CORE_CHGAME}
           # the ESPboy draws with LovyanGFX, the PyBadge and PyGamer use the Adafruit libraries and
           # the Gamebuino META its own. The RP2040 and RP2350 devices need no library at all
           arduino-cli lib install "LovyanGFX@${LIB_LOVYANGFX}"

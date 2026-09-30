@@ -34,12 +34,23 @@
 #error "the CHGame has the RAM for SCREENBUFFER 0 or 1, an 8 bpp buffer would be 16 KB of its 20 KB"
 #endif
 
-//-1 = the default skin, or the black & white one with a 1 bpp buffer, n = only skin n is built in
-//and used, see FORCESKIN in defines.h. Only the one skin is ever built in. A build can still set
-//it itself
-#ifndef FORCESKIN
-#define FORCESKIN -1
+//Only one skin fits in the flash next to the game: -1 = every skin, n = only skin n, see
+//FORCESKIN in defines.h. The black & white skin is the one that is taken: its pictures are
+//packed one bit a pixel rather than kept as RGB565, which is what makes the game fit at all.
+//A 1 bpp buffer picks that skin itself, and a build can still ask for another one
+#if !defined(FORCESKIN) && (SCREENBUFFER != 1)
+#define FORCESKIN skinBlackWhite
 #endif
+
+//The pixel loops are put in ram rather than run from flash. The core fetches from flash with wait
+//states and does not guess at branches, so a short loop with a test in it runs several times slower
+//there: the byte swap in writePixels costs about 9 cycles a pixel while the same loops cost 60 to
+//110 from flash, for work that is not much different. There is no .highcode section in this board's
+//linker script, but .data is loaded into ram from flash at startup, so a function put there is
+//copied with it and runs from ram. noinline as well, or a static loop called from one place is
+//folded into its caller and lands back in flash with it, the section asking for nothing. Only the
+//innermost loops are marked, the ram is needed for the level
+#define PLATFORM_HOT_CODE __attribute__((section(".data.hotcode"), noinline))
 
 //What the game draws with, shared by the display and the screen buffer: rectangles and the
 //text of the GLCD font, with the arguments LovyanGFX takes

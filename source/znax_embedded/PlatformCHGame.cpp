@@ -1,10 +1,10 @@
 //Platform.h for the CHGame, Kevin Bates' CH32X035 handheld. Nothing but the Arduino core of its
 //board package (github.com/bateske/CH32SerialBoot) is used, with the core's SPI library for the
-//display and SdFat for the save file:
+//display:
 //  display  ST7735S 128x128 on SPI1, chip select PA4, data/command PB0, reset PB12
 //  buttons  one GPIO each, pulled up and low while held
 //  sound    the buzzer on PB10 through the core's tone(), which drives it from TIM3
-//  saves    a file on the microSD card (chip select PB11), in a folder named after the game
+//  saves    a flash page the bootloader leaves alone, see the saved data further down
 //
 //The display numbers are the ones CHGfx (github.com/bateske/CHGfx) uses for this panel, which is
 //the library written for this board: MADCTL 0xC8 with the picture starting at column 2, row 3.
@@ -22,6 +22,8 @@
 //    eleven SPI transfers that follow it
 
 #include "Platform.h"
+//for the counters the drawing keeps while CHGAME_TIMING is on, see the frame report below
+#include "onebitimage.h"
 //every platform's source sits in the sketch folder, only the one being built compiles
 #ifdef PLATFORM_CHGAME
 
@@ -35,17 +37,6 @@ extern "C" {
 #include "ch32x035.h"
 }
 #include "PlatformGamebuinoFont.h"
-
-//the save file needs a card reader. Without the library the game still runs, it just does not
-//keep anything, and the build says so rather than failing
-#if defined(__has_include)
-  #if __has_include(<SdFat.h>)
-  #define CHGAME_HAS_SDFAT 1
-  #endif
-#endif
-#ifdef CHGAME_HAS_SDFAT
-#include <SdFat.h>
-#endif
 
 //the game's 128x128 screen is the whole display, there is no border to keep black
 #define DISPLAY_WIDTH 128
@@ -61,6 +52,14 @@ extern "C" {
 #define DISPLAY_SPI_SETTINGS SPISettings(DISPLAY_SPI_HZ, MSBFIRST, SPI_MODE0, SPI_TRANSMITONLY)
 //the card is happy slower, and is talked to while no display transaction is open
 #define SD_SPI_HZ 12000000
+
+#if CHGAME_TIMING
+//What the strips cost since the last report. With SCREENBUFFER 0 the frame does not leave through
+//Platform_PresentFrame at all, it leaves a strip at a time through writePixels, so without these
+//the whole of a frame would be counted as the game's own drawing
+static uint32_t stripSendUs = 0;
+static uint32_t stripPixels = 0;
+#endif
 
 static PlatformCHGameDisplay display;
 PlatformDisplay& platformDisplay = display;
@@ -90,13 +89,23 @@ static void BuildExpandTable(void)
 }
 #endif
 
+//The board links a libprintf of its own ahead of the C library (-lprintf, see its boards.txt) which
+//gives printf, sprintf and snprintf but no vsnprintf. Its conversions take no length modifier: %ld
+//and %lu write nothing at all and leave every argument after them reading the wrong one, so a score
+//printed with %ld came out blank and whatever followed it came out as rubbish. Print with %d and %u
+//and cast, which is enough since an int is 32 bits here. Platform_Log is not affected: vsnprintf
+//comes from the C library and takes the modifiers as usual, which is why the frame report below is
+//written with %lu and prints
 //Pixels are handed to the SPI in RAM lumps rather than a byte at a time: a call per byte costs
 //more than the byte takes on the wire. It also keeps what is sent away from the caller's data,
 //which may be in flash and cannot be written over
 #define SPI_CHUNK_PIXELS 64
-static uint8_t spiChunk[SPI_CHUNK_PIXELS * 2];
+//Two of them, so the chunk being byte swapped is never the one the DMA is reading, see
+//writePixels. writeColor fills one and sends it over and over, and uses only the first
+static uint8_t spiChunk[2][SPI_CHUNK_PIXELS * 2];
 
 static void PaintStack(void);
+static void ToneInit(void);
 static void StorageInit(const char* appName);
 
 // ===========================================================================
@@ -381,13 +390,22 @@ void PlatformCHGameDisplay::setAddrWindow(int32_t x, int32_t y, int32_t w, int32
 	endWrite();
 }
 
+//This is the band renderer's way out: one call carries a whole strip. It went out through SpiSend,
+//which keeps the wire about half busy for the reason given at the top, so a strip cost twice what
+//its bytes cost. It now goes by DMA in the same pattern Platform_PresentFrame uses for its rows:
+//the chunk that was filled last travels while the next one is byte swapped
 void PlatformCHGameDisplay::writePixels(const uint16_t* data, int32_t length, bool swap)
 {
+#if CHGAME_TIMING
+	const uint32_t tPush = micros();
+	stripPixels += (uint32_t)((length > 0) ? length : 0);
+#endif
 	startWrite();
+	uint8_t which = 0;
 	while (length > 0)
 	{
 		const int32_t run = (length > SPI_CHUNK_PIXELS) ? SPI_CHUNK_PIXELS : length;
-		uint8_t* dst = spiChunk;
+		uint8_t* dst = spiChunk[which];
 		if (swap)
 		{
 			for (int32_t i = 0; i < run; i++)
@@ -404,11 +422,19 @@ void PlatformCHGameDisplay::writePixels(const uint16_t* data, int32_t length, bo
 				*dst++ = (uint8_t)(data[i] >> 8);
 			}
 		}
-		SpiSend(spiChunk, (size_t)run * 2);
+		//the chunk before this one is given until now to finish, then this one is handed over
+		DmaWait();
+		DmaSend(spiChunk[which], (uint16_t)(run * 2));
+		which ^= 1;
 		data += run;
 		length -= run;
 	}
+	//the panel is only let go once the last chunk is off the wire
+	DmaWait();
 	endWrite();
+#if CHGAME_TIMING
+	stripSendUs += micros() - tPush;
+#endif
 }
 
 void PlatformCHGameDisplay::writeColor(uint16_t color, uint32_t length)
@@ -419,13 +445,13 @@ void PlatformCHGameDisplay::writeColor(uint16_t color, uint32_t length)
 	uint32_t filled = (length > SPI_CHUNK_PIXELS) ? SPI_CHUNK_PIXELS : length;
 	for (uint32_t i = 0; i < filled; i++)
 	{
-		spiChunk[i * 2] = high;
-		spiChunk[i * 2 + 1] = low;
+		spiChunk[0][i * 2] = high;
+		spiChunk[0][i * 2 + 1] = low;
 	}
 	while (length)
 	{
 		const uint32_t run = (length > filled) ? filled : length;
-		SpiSend(spiChunk, (size_t)run * 2);
+		SpiSend(spiChunk[0], (size_t)run * 2);
 		length -= run;
 	}
 	endWrite();
@@ -521,6 +547,12 @@ static uint16_t* charCell = NULL;
 
 size_t PlatformCHGameDisplay::drawChar(uint16_t c, int32_t x, int32_t y)
 {
+#if SCREENBUFFER
+	//With a screen buffer nothing is ever written to the display a character at a time: the game
+	//draws into the buffer and the finished frame goes out in one piece. The cell below would
+	//never be built, but drawChar is virtual, so without this the whole of it is still linked in
+	return PlatformCHGameGFX::drawChar(c, x, y);
+#else
 	const int32_t size = textSize;
 	if (c >= 176)
 		c++;
@@ -564,6 +596,7 @@ size_t PlatformCHGameDisplay::drawChar(uint16_t c, int32_t x, int32_t y)
 	writePixels(charCell, w * h, true);
 	endWrite();
 	return 6 * size;
+#endif
 }
 
 bool PlatformCHGameBuffer::createSprite(int32_t w, int32_t h)
@@ -583,6 +616,60 @@ void PlatformCHGameBuffer::fillRect(int32_t x, int32_t y, int32_t w, int32_t h, 
 		return;
 #if SCREENBUFFER == 1
 	(void)depth;
+	//A 1 bpp fill is whole bytes, eight pixels at a time, whenever every pixel of the rectangle
+	//comes out the same bit. Pixel by pixel it was a brightness test, a shift, a mask and a read
+	//modify write each time, and clearing the screen alone is WINDOW_WIDTH * WINDOW_HEIGHT of them.
+	//With DITHERING a shade between the ends of the pattern does differ per pixel, and that still
+	//goes the slow way; the ends of it, and every colour without it, do not
+	const uint16_t fillLum = (uint16_t)((((((color >> 11) & 0x1F) << 3) * 77)
+	                                   + ((((color >> 5) & 0x3F) << 2) * 150)
+	                                   + (((color & 0x1F) << 3) * 29)) >> 8);
+  #if DITHERING
+	//8 to 248 is the pattern's range, see SetBufferBit in Platform.h
+	const bool uniform = (fillLum <= 8) || (fillLum > 248);
+  #else
+	const bool uniform = true;
+  #endif
+	if (uniform && (WINDOW_WIDTH % 8 == 0))
+	{
+		const bool set = (fillLum >= 128);
+		const int32_t stride = WINDOW_WIDTH >> 3;
+		uint8_t* base = (uint8_t*)pixels;
+		for (int32_t row = y; row < y + h; row++)
+		{
+			uint8_t* line = base + row * stride;
+			int32_t column = x;
+			const int32_t end = x + w;
+			//the byte the rectangle starts part way into
+			while ((column < end) && ((column & 7) != 0))
+			{
+				const uint8_t bit = (uint8_t)(0x80 >> (column & 7));
+				if (set)
+					line[column >> 3] |= bit;
+				else
+					line[column >> 3] &= (uint8_t)~bit;
+				column++;
+			}
+			//the whole bytes between the ends
+			const int32_t whole = (end - column) >> 3;
+			if (whole > 0)
+			{
+				memset(line + (column >> 3), set ? 0xFF : 0x00, (size_t)whole);
+				column += whole << 3;
+			}
+			//and the byte it stops part way into
+			while (column < end)
+			{
+				const uint8_t bit = (uint8_t)(0x80 >> (column & 7));
+				if (set)
+					line[column >> 3] |= bit;
+				else
+					line[column >> 3] &= (uint8_t)~bit;
+				column++;
+			}
+		}
+		return;
+	}
 	for (int32_t row = y; row < y + h; row++)
 		for (int32_t column = x; column < x + w; column++)
 			SetBufferBit(pixels, column, row, color);
@@ -599,9 +686,8 @@ void Platform_Init(const char* appName)
 	DmaInit();
 	StorageInit(appName);
 
-	//the buzzer is driven by tone(), which sets the pin up itself
-	pinMode(PIN_BUZZER, OUTPUT);
-	digitalWrite(PIN_BUZZER, LOW);
+	//the buzzer, which is driven from a timer rather than by the core's tone()
+	ToneInit();
 
 	//every button reads low while it is held
 	pinMode(PIN_BTN_UP, INPUT_PULLUP);
@@ -641,17 +727,12 @@ void Platform_SetBufferColors(uint16_t setColor, uint16_t clearColor)
 #endif
 }
 
-//Temporary: says over the USB serial where a frame's time goes, so the part worth working on is
-//known rather than guessed. Build with -DCHGAME_TIMING=1 and -DFPSLOCK=0, or the frame lock hides
-//the answer by waiting out whatever is left of the 33 ms
-#ifndef CHGAME_TIMING
-#define CHGAME_TIMING 0
-#endif
-
 void Platform_PresentFrame(void)
 {
 #if CHGAME_TIMING
 	static uint32_t sendSum = 0, buildSum = 0, frameSum = 0, lastStart = 0;
+	static uint32_t pixelSum = 0, rowSum = 0, skipSum = 0;
+	static uint32_t bgSum = 0, sprSum = 0, covSum = 0;
 	static uint16_t counted = 0;
 	const uint32_t tStart = micros();
 	uint32_t buildUs = 0;
@@ -693,6 +774,22 @@ void Platform_PresentFrame(void)
 	const uint32_t tEnd = micros();
 	sendSum += (tEnd - tStart) - buildUs;
 	buildSum += buildUs;
+	//what the band renderer pushed since the last frame, which is the whole of the frame with
+	//SCREENBUFFER 0 and the odd rectangle outside the board with a buffer
+	sendSum += stripSendUs;
+	pixelSum += stripPixels;
+	stripSendUs = 0;
+	stripPixels = 0;
+	rowSum += oneBitRowsRead;
+	skipSum += oneBitRowsSkipped;
+	oneBitRowsRead = 0;
+	oneBitRowsSkipped = 0;
+	bgSum += bandBgUs;
+	sprSum += bandSpriteUs;
+	covSum += bandCoverUs;
+	bandBgUs = 0;
+	bandSpriteUs = 0;
+	bandCoverUs = 0;
 	if (lastStart)
 		frameSum += tStart - lastStart;
 	lastStart = tStart;
@@ -700,13 +797,17 @@ void Platform_PresentFrame(void)
 	{
 		//the frame is everything between one present and the next: the game's own drawing is
 		//whatever is left once the two below are taken off it
-		Platform_Log("frame %6lu us  build %5lu  send %5lu  game %6lu  heap %5lu  stack %4lu%s\n",
+		Platform_Log("frame %6lu us  build %5lu  send %5lu  game %6lu  px %5lu  bg %5lu  spr %5lu  cov %5lu  rows %5lu  heap %5lu  stack %4lu%s\n",
 		             (unsigned long)(frameSum / counted), (unsigned long)(buildSum / counted),
 		             (unsigned long)(sendSum / counted),
 		             (unsigned long)((frameSum - buildSum - sendSum) / counted),
+		             (unsigned long)(pixelSum / counted),
+		             (unsigned long)(bgSum / counted), (unsigned long)(sprSum / counted),
+		             (unsigned long)(covSum / counted), (unsigned long)(rowSum / counted),
 		             (unsigned long)Platform_FreeHeap(), (unsigned long)Platform_FreeStack(),
 		             dmaBroken ? "  (DMA gave up, rows go out by hand)" : "");
-		sendSum = buildSum = frameSum = 0;
+		sendSum = buildSum = frameSum = pixelSum = rowSum = skipSum = 0;
+		bgSum = sprSum = covSum = 0;
 		counted = 0;
 	}
 #endif
@@ -740,27 +841,102 @@ uint8_t Platform_GetButtons(void)
 }
 
 // ===========================================================================
-// Sound
+// Sound: a square wave from TIM1 channel 2, which is the buzzer's pin
 //
-// The core drives the buzzer from TIM3, which carries the tone on its own once it is started:
-// nothing here has to be counted per sample the way the Gamebuino's DAC is
+// The board package builds without the timer module unless the Peripherals menu is set to Full,
+// and the core's tone() is then an empty function: the game would run and say nothing. Leaving
+// that module out is worth about 5 KB, which is the difference between fitting this device and
+// not, so the buzzer is driven here instead. The way is CHBlackjack's
+// (github.com/bateske/CHBlackjack): TIM1 is remapped so that its channel 2 comes out on PB10, and
+// the note is the timer's own period, so nothing is counted per sample the way the Gamebuino's
+// DAC is. How long a note lasts is counted in the core's 1 kHz tick, so no second timer is used.
 // ===========================================================================
+
+//GPIOB's CFGHR cannot be read back, so the core keeps what was written to it here. Going through
+//the same place is what lets a pin be set up without undoing the core's own pins, see the note at
+//the top of this file
+extern "C" volatile uint32_t CFGHR_tmpB;
+
+//milliseconds of the note still to play, 0 while nothing is counting down
+static volatile uint16_t toneLeft = 0;
+
+static void ToneSet(uint16_t freq)
+{
+	if (!freq)
+	{
+		//the output is let go of low, and the timer stopped
+		TIM1->CH2CVR = 0;
+		TIM1->SWEVGR = 1;
+		TIM1->CTLR1 = 0;
+		TIM1->INTFR = 0;
+		return;
+	}
+	//the timer counts at 1 MHz, so a period is microseconds and half of it is a square wave
+	uint32_t period = (1000000u + freq / 2u) / freq;
+	if (period < 2)
+		period = 2;
+	TIM1->CTLR1 = 0;
+	TIM1->ATRLR = (uint16_t)(period - 1);
+	TIM1->CH2CVR = (uint16_t)(period / 2);
+	TIM1->SWEVGR = 1;
+	TIM1->INTFR = 0;
+	TIM1->CTLR1 = 0x81;
+}
+
+static void ToneInit(void)
+{
+	RCC->APB2PCENR |= RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOB | RCC_APB2Periph_TIM1;
+	//channel 2 of TIM1 comes out on PB10 only with the partial remap
+	AFIO->PCFR1 = (AFIO->PCFR1 & ~(7u << 15)) | (1u << 15);
+	GPIOB->BCR = 1u << 10;
+	//PB10 to alternate function, push pull, through the core's own record of the register
+	const uint32_t cfg = (CFGHR_tmpB & ~(15u << 8)) | (11u << 8);
+	CFGHR_tmpB = cfg;
+	GPIOB->CFGHR = cfg;
+
+	TIM1->CTLR1 = 0;
+	TIM1->CTLR2 = 0;
+	TIM1->SMCFGR = 0;
+	TIM1->DMAINTENR = 0;
+	TIM1->CCER = 0;
+	TIM1->CHCTLR1 = 0x6800;     //channel 2 in PWM mode, its compare value preloaded
+	TIM1->CHCTLR2 = 0;
+	TIM1->PSC = 47;             //48 MHz down to 1 MHz, so a count is a microsecond
+	TIM1->RPTCR = 0;
+	TIM1->ATRLR = 999;
+	TIM1->CH2CVR = 0;
+	TIM1->CNT = 0;
+	TIM1->BDTR = 0x8000;        //the outputs are only driven with this set
+	TIM1->CCER = 0x10;
+	TIM1->SWEVGR = 1;
+	TIM1->INTFR = 0;
+}
+
+//the core calls this every millisecond, and it is a weak do nothing until something says otherwise
+extern "C" void osSystickHandler(void)
+{
+	if (toneLeft && (--toneLeft == 0))
+		ToneSet(0);
+}
 
 void Platform_PlayTone(uint16_t freq, uint16_t duration)
 {
 	//a frequency of 0 is a rest
 	if (!freq)
 	{
-		noTone(PIN_BUZZER);
+		toneLeft = 0;
+		ToneSet(0);
 		return;
 	}
-	//tone() takes 0 as "until something stops it", which is what a duration of 0 means here too
-	tone(PIN_BUZZER, freq, duration);
+	ToneSet(freq);
+	//a duration of 0 means it plays until something stops it, which is what 0 does here as well
+	toneLeft = duration;
 }
 
 void Platform_StopTone(void)
 {
-	noTone(PIN_BUZZER);
+	toneLeft = 0;
+	ToneSet(0);
 }
 
 // ===========================================================================
@@ -849,51 +1025,221 @@ void Platform_Log(const char* format, ...)
 // ===========================================================================
 // Saved data
 //
-// The whole storage block is kept in RAM and in the file /<Game>_embedded/<Game>_embedded.sav on
-// the microSD card, named after the first word of the game's name, the same as on the Gamebuino
-// META. Bytes the file does not have yet read as 0xFF, the way erased flash does on the ESPboy,
-// so the game sees a never saved store. Without a card the game still runs, it just does not keep
-// anything.
+// The part has no EEPROM the game can use: its own library stores into the option bytes and holds
+// 26 of them, where the game's block is PLATFORM_STORAGE_SIZE. What it does have is flash the
+// bootloader leaves alone. The bootloader erases only the pages a new sketch occupies, so the
+// pages between the end of the image and the metadata page at 0xF700 come through an upload
+// untouched, and the game's block lives in one of those. This is what CHBlackjack does.
 //
-// The chip's own EEPROM library is no use for this: on this part it stores into the option bytes
-// and holds 26 of them, where the game's block is PLATFORM_STORAGE_SIZE.
+// Two pages are written in turn, each record stamped with a magic value, a version, a sequence
+// number that counts up and a CRC over everything before it. Whichever page reads back valid with
+// the higher sequence number is the newest save, so a power cut part way through a write can lose
+// at most the save being made and never the one before it. Where the image reaches into the first
+// of the two pages only the second is used, and where it reaches into both, saving turns itself
+// off rather than write over code.
+//
+// The whole block is kept in RAM as well and that is what the game reads, so a load costs nothing
+// and a write only happens when something actually changed.
 // ===========================================================================
+
+//the pages, and the size of one. The metadata page the bootloader keeps is at 0xF700
+#define CHGAME_FLASH_PAGE   256
+#define CHGAME_SAVE_PAGE_A  0xF500u
+#define CHGAME_SAVE_PAGE_B  0xF600u
+#define CHGAME_SAVE_MAGIC   0x47414843u   //"CHAG"
+#define CHGAME_SAVE_VERSION 1
+
+typedef struct ChGameSave ChGameSave;
+struct ChGameSave
+{
+	uint32_t magic;
+	uint16_t version;
+	uint16_t seq;                          //counts up, the higher of the two pages is the newer
+	uint8_t  block[PLATFORM_STORAGE_SIZE];
+	uint32_t crc;                          //covers every byte before it
+};
+
+//What is left for the block once the stamp and the sum are in it. The two pages sit next to each
+//other, 0xF500 + 256 being 0xF600, so a block too big for one page is written across both: that
+//gives up writing them in turn, and with it the promise that a power cut can only lose the newest
+//save, which is why it is only done where the block leaves no choice
+#define CHGAME_SAVE_PAYLOAD (CHGAME_FLASH_PAGE - 12)
+#define CHGAME_SAVE_PAYLOAD_BOTH ((CHGAME_FLASH_PAGE * 2) - 12)
+//1 while a record fits one page, so the two can be written in turn
+#define CHGAME_SAVE_ALTERNATES (PLATFORM_STORAGE_SIZE <= CHGAME_SAVE_PAYLOAD)
+static_assert(sizeof(ChGameSave) == PLATFORM_STORAGE_SIZE + 12, "the record is not the shape it says");
 
 static uint8_t storage[PLATFORM_STORAGE_SIZE];
 
-#ifdef CHGAME_HAS_SDFAT
-static SdFat sd;
-static bool sdReady = false;
-static char storagePath[64] = "/game_embedded/game_embedded.sav";
+#if PLATFORM_STORAGE_SIZE <= CHGAME_SAVE_PAYLOAD_BOTH
+static uint16_t storageSeq = 0;
+//1 once a write has failed to read back, after which nothing more is written
+static bool storageBroken = false;
+
+//where the image ends, which is what says how many of the two pages are free
+extern "C" uint32_t _data_lma, _data_vma, _edata;
+
+static uint32_t StorageImageEnd(void)
+{
+	return (uint32_t)&_data_lma + ((uint32_t)&_edata - (uint32_t)&_data_vma);
+}
+
+//1 while there is room above the image for the record at all. A record running across both pages
+//needs the image to stop below the first of them; one that fits a page needs only the last
+static bool StorageAvailable(void)
+{
+#if CHGAME_SAVE_ALTERNATES
+	return !storageBroken && (StorageImageEnd() <= CHGAME_SAVE_PAGE_B);
+#else
+	return !storageBroken && (StorageImageEnd() <= CHGAME_SAVE_PAGE_A);
 #endif
+}
+
+#if CHGAME_SAVE_ALTERNATES
+//1 while both pages are free, so that the newest save never overwrites the one before it
+static bool StorageTwoPages(void)
+{
+	return StorageImageEnd() <= CHGAME_SAVE_PAGE_A;
+}
+#endif
+
+static uint32_t StorageCrc(const uint8_t* data, uint32_t length)
+{
+	uint32_t crc = 0xFFFFFFFFu;
+	while (length--)
+	{
+		crc ^= *data++;
+		for (uint8_t bit = 0; bit < 8; bit++)
+			crc = (crc >> 1) ^ (0xEDB88320u & (uint32_t)(0u - (crc & 1u)));
+	}
+	return ~crc;
+}
+
+static bool StorageRecordOk(const ChGameSave* rec)
+{
+	return (rec->magic == CHGAME_SAVE_MAGIC) && (rec->version == CHGAME_SAVE_VERSION) &&
+	       (rec->crc == StorageCrc((const uint8_t*)rec, (uint32_t)(sizeof(ChGameSave) - sizeof(uint32_t))));
+}
+
+//The flash controller, following CH32SerialBoot's own flash.c. This has to run from RAM with
+//interrupts off: the vector table is in flash, and flash cannot be read while it is being written.
+//.srodata is a RAM section in the linker script, so the function is copied there at start up
+#define CHGAME_RAMFUNC __attribute__((section(".srodata.chgameflash"), noinline))
+#define CHGAME_FLASH_PROG(a) ((a) + 0x08000000u)
+
+CHGAME_RAMFUNC static void StoragePageWrite(uint32_t addr, const uint32_t* words)
+{
+	uint32_t saved;
+	__asm volatile("csrr %0, 0x800" : "=r"(saved));
+	__asm volatile("csrw 0x800, %0" : : "r"(saved & ~0x88u));
+
+	FLASH->KEYR = 0x45670123u;
+	FLASH->KEYR = 0xCDEF89ABu;
+	FLASH->MODEKEYR = 0x45670123u;
+	FLASH->MODEKEYR = 0xCDEF89ABu;
+
+	//erase the page
+	FLASH->CTLR |= 0x00020000u;                      //page erase
+	FLASH->ADDR = CHGAME_FLASH_PROG(addr);
+	FLASH->CTLR |= 0x00000040u;                      //start
+	while (FLASH->STATR & 0x00000001u) ;             //busy
+	FLASH->CTLR &= ~0x00020000u;
+
+	//empty the page buffer
+	FLASH->CTLR |= 0x00010000u;                      //page program
+	FLASH->CTLR |= 0x00080000u;                      //buffer reset
+	while (FLASH->STATR & 0x00000001u) ;
+	FLASH->CTLR &= ~0x00010000u;
+
+	//fill it a word at a time
+	for (uint32_t i = 0; i < CHGAME_FLASH_PAGE / 4; i++)
+	{
+		FLASH->CTLR |= 0x00010000u;
+		*(volatile uint32_t*)(CHGAME_FLASH_PROG(addr) + i * 4) = words[i];
+		FLASH->CTLR |= 0x00040000u;                  //buffer load
+		while (FLASH->STATR & 0x00000001u) ;
+		FLASH->CTLR &= ~0x00010000u;
+	}
+
+	//and write the buffer to the page
+	FLASH->CTLR |= 0x00010000u;
+	FLASH->ADDR = CHGAME_FLASH_PROG(addr);
+	FLASH->CTLR |= 0x00000040u;
+	while (FLASH->STATR & 0x00000001u) ;
+	FLASH->CTLR &= ~0x00010000u;
+
+	FLASH->CTLR |= 0x00008000u;                      //lock
+
+	__asm volatile("csrw 0x800, %0" : : "r"(saved));
+}
+
+static const ChGameSave* StoragePage(uint32_t addr)
+{
+	return (const ChGameSave*)addr;
+}
+
+//writes one record and reads it back, false when the page did not take it
+static bool StorageWritePage(uint32_t addr, const ChGameSave* rec)
+{
+	static uint32_t page[CHGAME_FLASH_PAGE / 4];
+	const uint8_t* from = (const uint8_t*)rec;
+	uint32_t left = (uint32_t)sizeof(ChGameSave);
+	uint32_t at = addr;
+	//one page at a time, which is a single page unless the record runs across both
+	while (left)
+	{
+		const uint32_t n = (left > CHGAME_FLASH_PAGE) ? CHGAME_FLASH_PAGE : left;
+		memset(page, 0xFF, sizeof(page));
+		memcpy(page, from, n);
+		StoragePageWrite(at, page);
+		if (memcmp((const void*)at, page, CHGAME_FLASH_PAGE) != 0)
+			return false;
+		from += n;
+		left -= n;
+		at += CHGAME_FLASH_PAGE;
+	}
+	return true;
+}
 
 static void StorageInit(const char* appName)
 {
+	(void)appName;
+	//nothing saved yet reads as erased flash does elsewhere, which the game takes as never written
 	memset(storage, 0xFF, sizeof(storage));
-#ifdef CHGAME_HAS_SDFAT
-	size_t n = 0;
-	while (appName[n] && (appName[n] != ' ') && (n < 16))
-		n++;
-	if (n)
-		snprintf(storagePath, sizeof(storagePath), "/%.*s_embedded/%.*s_embedded.sav",
-		         (int)n, appName, (int)n, appName);
+	storageSeq = 0;
 
-	sdReady = sd.begin(PIN_SD_CS, SD_SCK_MHZ(SD_SPI_HZ / 1000000));
-	if (!sdReady)
+	if (!StorageAvailable())
 	{
-		Platform_Log("no SD card, nothing is saved\n");
+		Platform_Log("the image reaches into the save pages, nothing is saved\n");
 		return;
 	}
-	File file = sd.open(storagePath, O_RDONLY);
-	if (file)
-	{
-		file.read(storage, sizeof(storage));
-		file.close();
-	}
+
+#if CHGAME_SAVE_ALTERNATES
+	const ChGameSave* a = StoragePage(CHGAME_SAVE_PAGE_A);
+	const ChGameSave* b = StoragePage(CHGAME_SAVE_PAGE_B);
+	const bool okA = StorageTwoPages() && StorageRecordOk(a);
+	const bool okB = StorageRecordOk(b);
+	const ChGameSave* best = NULL;
+	if (okA && okB)
+		//the sequence numbers wrap, so it is the difference that says which is the newer
+		best = ((int16_t)(a->seq - b->seq) > 0) ? a : b;
+	else if (okA)
+		best = a;
+	else if (okB)
+		best = b;
 #else
-	(void)appName;
-	Platform_Log("built without SdFat, nothing is saved\n");
+	//the one record starts at the first page and runs on into the second
+	const ChGameSave* one = StoragePage(CHGAME_SAVE_PAGE_A);
+	const ChGameSave* best = StorageRecordOk(one) ? one : NULL;
 #endif
+
+	if (!best)
+	{
+		Platform_Log("no save found\n");
+		return;
+	}
+	memcpy(storage, best->block, sizeof(storage));
+	storageSeq = best->seq;
 }
 
 void Platform_StorageRead(uint16_t offset, uint8_t* data, uint16_t length)
@@ -903,32 +1249,68 @@ void Platform_StorageRead(uint16_t offset, uint8_t* data, uint16_t length)
 
 void Platform_StorageWrite(uint16_t offset, const uint8_t* data, uint16_t length)
 {
-	//storing what is already there does not touch the card
+	//storing what is already there does not touch the flash
 	if (memcmp(storage + offset, data, length) == 0)
 		return;
 	memcpy(storage + offset, data, length);
-#ifdef CHGAME_HAS_SDFAT
-	if (!sdReady)
+
+	if (!StorageAvailable())
 		return;
-	//the folder is the part of the path before the file name
-	char folder[sizeof(storagePath)];
-	strcpy(folder, storagePath);
-	char* slash = strrchr(folder, '/');
-	if (slash && (slash != folder))
+
+	static ChGameSave rec;
+	memset(&rec, 0, sizeof(rec));
+	rec.magic = CHGAME_SAVE_MAGIC;
+	rec.version = CHGAME_SAVE_VERSION;
+	rec.seq = (uint16_t)(storageSeq + 1);
+	memcpy(rec.block, storage, sizeof(storage));
+	rec.crc = StorageCrc((const uint8_t*)&rec, (uint32_t)(sizeof(ChGameSave) - sizeof(uint32_t)));
+
+#if CHGAME_SAVE_ALTERNATES
+	//the page that is not holding the newest save, so that one survives a write that fails
+	uint32_t addr = CHGAME_SAVE_PAGE_B;
+	if (StorageTwoPages())
 	{
-		*slash = '\0';
-		if (!sd.exists(folder))
-			sd.mkdir(folder);
+		const ChGameSave* b = StoragePage(CHGAME_SAVE_PAGE_B);
+		addr = (StorageRecordOk(b) && (b->seq == storageSeq)) ? CHGAME_SAVE_PAGE_A : CHGAME_SAVE_PAGE_B;
 	}
-	File file = sd.open(storagePath, O_WRONLY | O_CREAT | O_TRUNC);
-	if (!file)
-	{
-		Platform_Log("could not write %s\n", storagePath);
-		return;
-	}
-	file.write(storage, sizeof(storage));
-	file.close();
+#else
+	//the record fills both pages, so there is only the one place it can go
+	const uint32_t addr = CHGAME_SAVE_PAGE_A;
 #endif
+
+	if (!StorageWritePage(addr, &rec))
+	{
+		storageBroken = true;
+		Platform_Log("the save page did not take, nothing more is saved\n");
+		return;
+	}
+	storageSeq = rec.seq;
 }
+
+#else
+
+//The block this game keeps is larger than what fits in a flash page beside the stamp and the sum,
+//and only whole pages come through an upload with anything in them, so there is nowhere to put it.
+//The game runs and reads back whatever it wrote while it is on, and nothing is kept once the power
+//goes. A game that kept PLATFORM_STORAGE_SIZE bytes or fewer would save here like the rest
+static void StorageInit(const char* appName)
+{
+	(void)appName;
+	memset(storage, 0xFF, sizeof(storage));
+	Platform_Log("the save block is %d bytes where two flash pages hold %d, nothing is kept\n",
+	             (int)PLATFORM_STORAGE_SIZE, (int)CHGAME_SAVE_PAYLOAD_BOTH);
+}
+
+void Platform_StorageRead(uint16_t offset, uint8_t* data, uint16_t length)
+{
+	memcpy(data, storage + offset, length);
+}
+
+void Platform_StorageWrite(uint16_t offset, const uint8_t* data, uint16_t length)
+{
+	memcpy(storage + offset, data, length);
+}
+
+#endif
 
 #endif

@@ -28,8 +28,8 @@ Every file is named <device>_<game><variant>.<ext>, for example PicoSystem_Znax.
 
 The settings of a build (SCREENBUFFER, SCALESCREEN, ...) are passed to the compiler as defines, the
 device headers only use their own values for what a build does not set. The sources are not
-touched. What is built for each device is listed in TARGETS below, except the ones marked
-"request" in DEVICES, which are only built by a run that names them with --only.
+touched. What is built for each device is listed in TARGETS below. A device marked "request" in
+DEVICES is only built by a run that names it with --only; none are marked that way at present.
 
 Needs the Arduino IDE 1.8 folder with the board packages (arduino-builder) and, for the Windows
 build, MSYS2 with the mingw64 cmake, ninja, gcc and SDL2 packages. The Playdate build needs the Playdate
@@ -52,8 +52,12 @@ Usage:
   --arduino DIR   the Arduino IDE folder (default C:/arduino, or the ARDUINO_DIR environment variable)
   --msys2 DIR     MSYS2's mingw64 bin folder (default C:/msys64/mingw64/bin, or MSYS2_BIN). Where
                   that folder is not there, cmake and ninja are taken from the PATH
-  --arduino-cli PATH  build the Arduino devices with arduino-cli instead of the Arduino IDE 1.8
-                  folder (default ARDUINO_CLI). This is what the CI workflow uses
+  --arduino2 DIR  the Arduino IDE 2 folder (default C:/arduino2, or ARDUINO2_DIR). The CHGame's
+                  board package is only published for IDE 2, so that one is built with the
+                  arduino-cli IDE 2 ships and the rest with the IDE 1.8 folder, in the same run
+  --arduino-cli PATH  build every Arduino device with arduino-cli instead of the Arduino IDE 1.8
+                  folder (default ARDUINO_CLI). This is what the CI workflow uses, and it overrides
+                  --arduino2 as well
   --lovyangfx DIR the LovyanGFX folder the Windows build uses, when it is not the one in the Arduino
                   IDE's sketchbook (default LOVYANGFX_DIR)
   --cross-windows the Windows exe, the libretro dll and the Playdate simulator's pdex.dll are built
@@ -100,7 +104,6 @@ SKINS = 2
 TARGETS = [
     ("ESPboy", "", {}),
     ("GamebuinoMeta", "", {}),
-    # only built when it is asked for by name, see "request" in DEVICES
     ("CHGame", "", {}),
     ("PyBadge", "", {}),
     ("PyGamer", "", {}),
@@ -159,23 +162,25 @@ DEVICES = {
     },
     "CHGame": {
         # Kevin Bates' CH32X035 handheld, board package github.com/bateske/CH32SerialBoot. It is
-        # only published for the Arduino IDE 2, whose packages the IDE 1.8 folder does not hold,
-        # so this device is built with the CLI that IDE ships:
-        #   python tools/build_releases.py --only CHGame \
-        #       --arduino-cli "C:/arduino2/resources/app/lib/backend/resources/arduino-cli.exe"
-        "fqbn": "CHGame:ch32v:CHGame",
-        # Only built when --only names it. The game does not fit this device yet, see the note
-        # below, and a run that did not ask for it should not fail over that
-        "request": True,
+        # only published for the Arduino IDE 2, whose packages the IDE 1.8 folder does not hold, so
+        # this one is built with the arduino-cli that IDE 2 ships and the rest with the IDE 1.8
+        # folder, in the same run. "cli" below is what says so, and --arduino2 says where IDE 2 is
+        # when it is not in the usual place. --arduino-cli still overrides it for every device
+        "cli": True,
+        #The Peripherals menu is pinned rather than left to its default. Its "game" setting
+        #leaves the timer and UART modules out, which is worth about 5 KB and is the
+        #difference between this game fitting and not, but it also makes the core's tone()
+        #an empty function. The buzzer is driven from TIM1 in PlatformCHGame.cpp instead, so
+        #nothing is lost by it. Naming it here means a later change of default cannot quietly
+        #turn the sound off, or quietly cost the 5 KB
+        "fqbn": "CHGame:ch32v:CHGame:periph=game",
         # The package brings its own riscv-none-embed-gcc, there is nothing to pin, and the board's
         # own menu builds at -Os, which is what a device this tight wants
         "outputs": ["bin"],
-        # THE GAME DOES NOT FIT THIS DEVICE YET. The bootloader keeps the first 12 KB of the 62 KB
-        # of flash and the game gets 50944 bytes, where an empty sketch is 8764 of them. Nearly all
-        # of what is over is the artwork: the images are included into helperfuncs.cpp, and that
-        # one object is most of the build. The code and the core together are the part that would
-        # fit. The way in is the microSD slot the board already has, with the images read from a
-        # file through PLATFORM_READ_BYTES rather than kept in flash
+        # It fits, with the artwork packed one bit a pixel: this device builds the black & white
+        # skin alone and nothing else would go in beside it, see FORCESKIN and ONEBITIMAGES in the
+        # device header. The bootloader keeps the first 12 KB of the 62 KB of flash and the game gets
+        # 50944 bytes
     },
     "PyBadge": {
         "fqbn": "adafruit:samd:adafruit_pybadge_m4",
@@ -433,6 +438,16 @@ def arduino_cli_packages(arduino_cli):
         # what arduino-cli falls back to itself, and where the CI runner keeps it
         data = os.path.join(os.path.expanduser("~"), ".arduino15")
     return os.path.join(data, "packages")
+
+
+def arduino2_cli(arduino2):
+    """The arduino-cli that the Arduino IDE 2 ships inside its install folder.
+
+    A board package installed by IDE 2 is not in the IDE 1.8 folder, so a device whose core only
+    exists there has to be built with this one. Returns the path, or None when it is not there."""
+    path = os.path.join(arduino2, "resources", "app", "lib", "backend", "resources",
+                        "arduino-cli.exe" if os.name == "nt" else "arduino-cli")
+    return path if os.path.isfile(path) else None
 
 
 def build_arduino_cli(device, defines, build_dir, cache_dir, arduino_cli, log):
@@ -938,10 +953,20 @@ def main():
                              "image over the ones the buffer holds instead of taking the nearest "
                              "of them, 0 takes the nearest. An 8 bpp and a 1 bpp buffer have "
                              "something to gain from it, see DITHERING in defines.h")
+    parser.add_argument("--define", action="append", default=[], metavar="NAME[=VALUE]",
+                        help="define NAME for every build, the way the --force options do. For a "
+                             "switch a device header leaves off, such as -DCHGAME_TIMING=1 "
+                             "-DFPSLOCK=0 to have the CHGame report where a frame's time goes over "
+                             "its USB serial. May be given more than once, and VALUE defaults to 1")
     parser.add_argument("--list", action="store_true", help="list the builds and exit")
     parser.add_argument("--arduino", default=os.environ.get("ARDUINO_DIR", "C:/arduino"))
+    parser.add_argument("--arduino2", default=os.environ.get("ARDUINO2_DIR", "C:/arduino2"),
+                        help="the Arduino IDE 2 folder, for the devices whose board package only "
+                             "exists there: its own arduino-cli builds those and the IDE 1.8 folder "
+                             "the rest (default ARDUINO2_DIR)")
     parser.add_argument("--arduino-cli", default=os.environ.get("ARDUINO_CLI", ""),
-                        help="build the Arduino devices with this arduino-cli instead of the IDE folder")
+                        help="build every Arduino device with this arduino-cli instead of the IDE "
+                             "folder, overriding --arduino2 as well")
     parser.add_argument("--lovyangfx", default=os.environ.get("LOVYANGFX_DIR", ""),
                         help="the LovyanGFX library folder for the Windows build, when it is not in "
                              "the Arduino IDE's sketchbook (default LOVYANGFX_DIR)")
@@ -999,10 +1024,15 @@ def main():
         overrides["DITHERING"] = args.forcedithering
     if args.forcewindowscale is not None:
         overrides["WINDOW_SCALE"] = args.forcewindowscale
+    for item in args.define:
+        name, _, value = item.partition("=")
+        if not name:
+            parser.error("--define wants a name, as in --define CHGAME_TIMING=1")
+        overrides[name] = value if value else 1
 
     def asked_for(device):
-        """A device marked "request" is only built by a run that names it: the game does not fit
-        the CHGame yet, and a run that did not ask for it should not fail over that"""
+        """A device marked "request" is only built by a run that names it, for one the game does
+        not fit or whose toolchain is not usually there. Nothing is marked that way at present"""
         if only is not None:
             return device in only
         return not DEVICES[device].get("request", False)
@@ -1057,8 +1087,18 @@ def main():
             # the core and libraries are compiled once per device and kept between builds
             cache_dir = os.path.join(WORK, "cache_%s_%s" % (device, cache_tag(device, defines)))
             os.makedirs(cache_dir, exist_ok=True)
-            if args.arduino_cli:
-                built = build_arduino_cli(device, defines, build_dir, cache_dir, args.arduino_cli, log)
+            # --arduino-cli builds every Arduino device that way; a device marked "cli" asks for
+            # IDE 2's own arduino-cli whatever the rest of the run uses, see DEVICES
+            cli = args.arduino_cli
+            if not cli and DEVICES[device].get("cli"):
+                cli = arduino2_cli(args.arduino2)
+                if not cli:
+                    print(" FAILED, no arduino-cli under %s" % args.arduino2)
+                    print("    %s needs the one the Arduino IDE 2 ships, see --arduino2" % device)
+                    failed.append(tag)
+                    continue
+            if cli:
+                built = build_arduino_cli(device, defines, build_dir, cache_dir, cli, log)
             else:
                 built = build_arduino(device, defines, build_dir, cache_dir, args.arduino, log)
         if not built:

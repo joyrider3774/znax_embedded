@@ -51,7 +51,7 @@ static void DrawNewScoreLine()
 	char Msg[32];
 	snprintf(Msg,sizeof(Msg),"%2d.%s",ScorePlace+1,Name);
 	printText((int)(3*SCALE),(int)((62+ScorePlace*16)*SCALE),Msg,ColorScoreTextNew,ColorScoreTextNew,1);
-	snprintf(Msg,sizeof(Msg),"%7ld",(long)Score);
+	snprintf(Msg,sizeof(Msg),"%7d",(int)Score);
 	printText((int)(155*SCALE),(int)((62+ScorePlace*16)*SCALE),Msg,ColorScoreTextNew,ColorScoreTextNew,1);
 	strcpy(shownName, Name);
 }
@@ -151,14 +151,14 @@ void GetHighScoreName()
 			{
 				snprintf(Msg,sizeof(Msg),"%2d.%s",Teller+1,saveData.HighScores[GameType][Teller].PName);
 				printText((int)(3*SCALE),(int)((62+Teller*16)*SCALE),Msg,ColorScoreText,ColorScoreText,1);
-				snprintf(Msg,sizeof(Msg),"%7ld",(long)saveData.HighScores[GameType][Teller].PScore);
+				snprintf(Msg,sizeof(Msg),"%7d",(int)saveData.HighScores[GameType][Teller].PScore);
 				printText((int)(155*SCALE),(int)((62+Teller*16)*SCALE),Msg,ColorScoreText,ColorScoreText,1);
 			}
 			else
 			{
 				snprintf(Msg,sizeof(Msg),"%2d.%s",Teller+2,saveData.HighScores[GameType][Teller].PName);
 				printText((int)(3*SCALE),(int)((62+(Teller+1)*16)*SCALE),Msg,ColorScoreText,ColorScoreText,1);
-				snprintf(Msg,sizeof(Msg),"%7ld",(long)saveData.HighScores[GameType][Teller].PScore);
+				snprintf(Msg,sizeof(Msg),"%7d",(int)saveData.HighScores[GameType][Teller].PScore);
 				printText((int)(155*SCALE),(int)((62+(Teller+1)*16)*SCALE),Msg,ColorScoreText,ColorScoreText,1);
 			}
 		}

@@ -19,3 +19,4 @@
 # what Python leaves next to the scripts in tools/
 __pycache__/
 *.pyc
+/tools/output.map

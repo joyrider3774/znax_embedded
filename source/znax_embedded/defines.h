@@ -104,6 +104,12 @@
 //colour per pixel. Only one skin is ever built in, so the choice is known here
 #define ONEBITIMAGES (FORCESKIN == skinBlackWhite)
 
+//1 when the black & white skin is the only one in the build. Every picture is then one bit a pixel
+//and the paths that read RGB565 are dead: a build that is only ever going to draw one bit pictures
+//need not carry the index the run length encoded background is read through, which is a row table
+//the width of the screen
+#define ONEBITONLY ONEBITIMAGES
+
 #define FRAMERATE 30
 //1 = every frame waits until 1/FRAMERATE of a second has passed, 0 = a frame starts as soon
 //as the last one is done, to see how fast the game can go. The block animation and the music

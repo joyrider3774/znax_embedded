@@ -75,13 +75,13 @@ static bool DrawStatusBar()
 {
     char Text[48];
     if(AddToScore == 0)
-        snprintf(Text,sizeof(Text),"T:%02d:%02d     S:%ld",Timer/60,Timer%60,(long)Score);
+        snprintf(Text,sizeof(Text),"T:%02d:%02d     S:%d",Timer/60,Timer%60,(int)Score);
     else
     {
         if(GameType == Relative)
-            snprintf(Text,sizeof(Text),"T:%02d:%02d+%03d S:%ld+%d",Timer/60,Timer%60,AddToScore/400,(long)Score, AddToScore);
+            snprintf(Text,sizeof(Text),"T:%02d:%02d+%03d S:%d+%d",Timer/60,Timer%60,AddToScore/400,(int)Score, AddToScore);
         else
-            snprintf(Text,sizeof(Text),"T:%02d:%02d     S:%ld+%d",Timer/60,Timer%60,(long)Score, AddToScore);
+            snprintf(Text,sizeof(Text),"T:%02d:%02d     S:%d+%d",Timer/60,Timer%60,(int)Score, AddToScore);
     }
 
     if (statusShown && (strcmp(Text, shownStatus) == 0))

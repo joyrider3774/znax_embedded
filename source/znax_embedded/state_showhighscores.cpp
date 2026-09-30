@@ -69,7 +69,7 @@ void ShowHighScores()
     {
         snprintf(Text,sizeof(Text),"%2d.%s",Teller+1,saveData.HighScores[ScoreType][Teller].PName);
 	    printText((int)(3*SCALE),(int)((62+Teller*16)*SCALE),Text,ColorScoreText,ColorScoreText,1);
-	    snprintf(Text,sizeof(Text),"%7ld",(long)saveData.HighScores[ScoreType][Teller].PScore);
+	    snprintf(Text,sizeof(Text),"%7d",(int)saveData.HighScores[ScoreType][Teller].PScore);
 	    printText((int)(155*SCALE),(int)((62+Teller*16)*SCALE),Text,ColorScoreText,ColorScoreText,1);
     }
 }
