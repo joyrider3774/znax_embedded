@@ -4,6 +4,8 @@
 #include "defines.h"
 #include "helperfuncs.h"
 #include "sound.h"
+//the blocks are drawn into a strip of the screen when one is open
+#include "bandrender.h"
 
 CWorldParts *World;
 
@@ -205,6 +207,10 @@ void CWorldParts_Destroy(CWorldParts* WorldParts)
 
 //The background under the rectangle x,y,w,h was drawn again: the blocks on it are drawn again
 //as well. A cell that lies inside it as a whole is clean, one it only partly covers is dirty
+//A cell at a time will not do for putting an area back: BlockScreenX is x * TileWidth + 7 + x, so
+//the columns sit a pixel apart and a repaint that goes cell by cell leaves those gaps as they were.
+//What was over them, an overlay say, stays on the screen. The whole rectangle's background has to
+//be painted, which is what CWorldParts_InvalidateRect is paired with
 void CWorldParts_InvalidateRect(int x, int y, int w, int h)
 {
     int X,Y;
@@ -220,6 +226,43 @@ void CWorldParts_InvalidateRect(int x, int y, int w, int h)
             else if (shownBlock[X][Y] != cellClean)
                 shownBlock[X][Y] = cellDirty;
         }
+}
+
+//The blocks of the cells that show bare background, drawn into the strip that is open. That is
+//the cells CWorldParts_InvalidateRect found the rectangle holds whole, and the strip has their
+//background in it already, so the block goes straight on top of it and nothing is ever shown
+//half painted. A cell is eight pixels tall and the board starts at row 19, so a cell falls in
+//two strips: it is drawn into both and the clipping in bandrender.cpp takes the right half
+void CWorldParts_DrawCleanCells(CWorldParts* WorldParts)
+{
+    const int top = BandRender_StripY();
+    const int bottom = top + BandRender_StripH();
+    int X,Y;
+    for(Y=0;Y<NrOfRows;Y++)
+    {
+        const int cy = BlockScreenY(Y);
+        //the rows of the board this strip cannot hold cost nothing more than this test. Without
+        //it every cell would read a sixteen colour palette before finding it has nothing to draw
+        if ((cy + TileHeight <= top) || (cy >= bottom))
+            continue;
+        for(X=0;X<NrOfCols;X++)
+            if (shownBlock[X][Y] == cellClean)
+                CBlock_Draw(WorldParts->Items[X][Y]);
+    }
+}
+
+//Those cells now show their block, which the strips have all been sent. Kept apart from the
+//drawing because a cell falls in two strips: it is only finished once the last strip has gone
+void CWorldParts_MarkCleanDrawn(CWorldParts* WorldParts)
+{
+    int X,Y;
+    for(Y=0;Y<NrOfRows;Y++)
+        for(X=0;X<NrOfCols;X++)
+            if (shownBlock[X][Y] == cellClean)
+            {
+                CBlock* Block = WorldParts->Items[X][Y];
+                shownBlock[X][Y] = (int16_t)(Block->Color * 16 + Block->AnimPhase);
+            }
 }
 
 //Draws the blocks that differ from what their cell shows and moves the animations on. Returns if

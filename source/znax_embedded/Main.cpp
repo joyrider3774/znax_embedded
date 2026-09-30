@@ -22,6 +22,7 @@
 #include "state_showhighscores.h"
 #include "state_gethighscorename.h"
 #include "sound.h"
+#include "bandrender.h"
 
 //The program itself, Game_Setup and Game_Loop are called by the device's own source
 
@@ -41,6 +42,9 @@ static uint32_t getFreeRam() {
 static uint32_t getFreeStack() {
 	return Platform_FreeStack();
 }
+
+//whether the game screen holds the strip buffer right now, see the switch in Game_Loop
+static bool bandHeld = false;
 
 //lowest free heap seen since boot, sampled at the end of Game_Setup and of every frame.
 //Something allocated and freed again within one frame does not show up here
@@ -146,6 +150,21 @@ void Game_Loop(void)
             debugMode = !debugMode;
             //the screens only draw what changed, the debug header has to be drawn over
             needRedraw = 1;
+        }
+
+        //The strip buffer belongs to the game screen, which ReadyGo, Game and TimeOver share.
+        //It is taken when that screen is entered and given back when it is left, so the screens
+        //that have nothing to paint in strips do not hold the memory. See bandrender.h
+        const bool gameScreen = (GameState == GSReadyGo) || (GameState == GSReadyGoInit)
+                             || (GameState == GSGame) || (GameState == GSGameInit)
+                             || (GameState == GSTimeOver) || (GameState == GSTimeOverInit);
+        if (gameScreen != bandHeld)
+        {
+            if (gameScreen)
+                BandRender_Init();
+            else
+                BandRender_Deinit();
+            bandHeld = gameScreen;
         }
 
         switch(GameState)

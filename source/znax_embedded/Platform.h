@@ -41,6 +41,14 @@
 #error "the device header has to define SCREENBUFFER"
 #endif
 
+//1 when the device draws into something the display is not showing: another page, or a frame that
+//is handed over when it is done. Such a device never shows a half drawn frame even without a screen
+//buffer, so it has no use for the band renderer, which costs a pass over every pixel to put the
+//picture together in memory. A device header sets this, see bandrender.h
+#ifndef PLATFORM_OFFSCREEN_DRAW
+#define PLATFORM_OFFSCREEN_DRAW 0
+#endif
+
 //Marks a function worth keeping in the fastest memory the device has. Only the Game Boy Advance
 //has any use for it: its program is read from the cartridge with wait states, so a loop that runs
 //once for every pixel is several times slower from there than from the internal work RAM. The

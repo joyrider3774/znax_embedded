@@ -41,6 +41,11 @@ void CWorldParts_AddBlocks(CWorldParts* WorldParts);
 void CWorldParts_NewGame(CWorldParts* WorldParts);
 bool CWorldParts_Draw(CWorldParts* WorldParts, int CursorX, int CursorY, bool* CursorCellDrawn);
 void CWorldParts_InvalidateRect(int x, int y, int w, int h);
+//For painting an area of the board in one pass, see bandrender.h. After InvalidateRect marked
+//which cells the area holds whole, DrawCleanCells puts their blocks into the strip that is open
+//and MarkCleanDrawn records them as drawn once every strip has gone out
+void CWorldParts_DrawCleanCells(CWorldParts* WorldParts);
+void CWorldParts_MarkCleanDrawn(CWorldParts* WorldParts);
 void CWorldParts_DeSelect(CWorldParts* WorldParts, bool PlaySound);
 long CWorldParts_Select(CWorldParts* WorldParts, int PlayFieldX,int PlayFieldY);
 int CWorldParts_MovesLeft(CWorldParts* WorldParts);

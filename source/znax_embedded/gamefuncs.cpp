@@ -5,6 +5,9 @@
 #include "defines.h"
 #include "gamefuncs.h"
 #include "helperfuncs.h"
+#include "cworldparts.h"
+//the game screen is painted a strip at a time so nothing is seen half drawn
+#include "bandrender.h"
 
 #define SAVE_MAGIC 0xDADA
 
@@ -96,6 +99,26 @@ static bool DrawStatusBar()
     return true;
 }
 
+//Paints a rectangle of the game screen in one pass: the piece of background and the blocks of the
+//cells the rectangle holds whole are put together in memory and sent as strips, so what appears
+//on the display is the finished picture. Painted the plain way the background goes down first and
+//really is on the display for a moment, which is the rectangle of bare background that could be
+//seen where READY and GO had been, and the flicker under a cell that is drawn again.
+//The cells the rectangle only partly covers are left dirty for CWorldParts_Draw, which paints
+//their background itself. Without a strip buffer this is the plain way, see bandrender.h
+static void PaintGameRect(int x, int y, int w, int h)
+{
+    CWorldParts_InvalidateRect(x, y, w, h);
+    if (!BandRender_Begin(imgBackground, (int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h))
+    {
+        drawBackgroundPart(x, y, w, h);
+        return;
+    }
+    while (BandRender_Next())
+        CWorldParts_DrawCleanCells(World);
+    CWorldParts_MarkCleanDrawn(World);
+}
+
 //true when the cell of the block at playfield X,Y and the rectangle overlap
 static bool CellInRect(int X, int Y, int x, int y, int w, int h)
 {
@@ -112,9 +135,8 @@ void DrawGameScreen(bool ShowCursor, const uint8_t* Overlay, int OverlayWidth, i
     if (needRedraw)
     {
         needRedraw = 0;
-        // the bare background shows no block, cursor, text or overlay, what is there is drawn on it below
-        drawImageRLE(0, 0, fullScreenWidth, fullScreenHeight, imgBackground);
-        CWorldParts_InvalidateRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+        // the background and the blocks on it, the cursor, the text and the overlay come below
+        PaintGameRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
         cursorShown = false;
         statusShown = false;
         shownOverlay = NULL;
@@ -123,8 +145,7 @@ void DrawGameScreen(bool ShowCursor, const uint8_t* Overlay, int OverlayWidth, i
     // an overlay that goes away leaves the background and the blocks under it to be drawn again
     if (shownOverlay && (shownOverlay != Overlay))
     {
-        drawBackgroundPart(shownOverlayX, shownOverlayY, shownOverlayWidth, shownOverlayHeight);
-        CWorldParts_InvalidateRect(shownOverlayX, shownOverlayY, shownOverlayWidth, shownOverlayHeight);
+        PaintGameRect(shownOverlayX, shownOverlayY, shownOverlayWidth, shownOverlayHeight);
         if (cursorShown && CellInRect(shownCursor.X, shownCursor.Y, shownOverlayX, shownOverlayY, shownOverlayWidth, shownOverlayHeight))
             cursorShown = false;
         shownOverlay = NULL;
@@ -135,8 +156,7 @@ void DrawGameScreen(bool ShowCursor, const uint8_t* Overlay, int OverlayWidth, i
     SPoint position = Selector->CurrentPoint;
     if (cursorShown && (!ShowCursor || (position.X != shownCursor.X) || (position.Y != shownCursor.Y)))
     {
-        drawBackgroundPart(BlockScreenX(shownCursor.X), BlockScreenY(shownCursor.Y), cursorWidth, cursorHeight);
-        CWorldParts_InvalidateRect(BlockScreenX(shownCursor.X), BlockScreenY(shownCursor.Y), cursorWidth, cursorHeight);
+        PaintGameRect(BlockScreenX(shownCursor.X), BlockScreenY(shownCursor.Y), cursorWidth, cursorHeight);
         cursorShown = false;
         drawn = true;
     }

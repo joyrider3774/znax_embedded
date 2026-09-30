@@ -1,9 +1,12 @@
 #include <stdint.h>
 #include "common.h"
 #include "helperfuncs.h"
+#include "fourbitimage.h"
 //the one bit pictures of the black & white skin, shared with anything else
 //that reads them
 #include "onebitimage.h"
+//where the drawing goes while a strip of the screen is being put together in memory
+#include "bandrender.h"
 
 //A row of an image on its way to the display. Where flash is plain memory an evenly placed
 //row is handed over where it lies, otherwise it is copied into the scratch row first. A 16
@@ -44,6 +47,31 @@ static inline const uint16_t* ImageRow(const void* src, uint16_t* scratch, int c
 #include "images/default/cursor_RGB565_LE.h"
 #endif
 
+#if FORCESKIN == skinDefault4b
+#include "images/default_4b/background_RLE565.h"
+#include "images/default_4b/highscores_RLE565.h"
+#include "images/default_4b/intro1_RLE565.h"
+#include "images/default_4b/intro2_RLE565.h"
+#include "images/default_4b/titlescreen_RLE565.h"
+#include "images/default_4b/credits_RLE565.h"
+#include "images/default_4b/credits1_RLE565.h"
+#include "images/default_4b/credits2_RLE565.h"
+#include "images/default_4b/fixedtimer1_RLE565.h"
+#include "images/default_4b/fixedtimer2_RLE565.h"
+#include "images/default_4b/go_RLE565.h"
+#include "images/default_4b/highscores1_RLE565.h"
+#include "images/default_4b/highscores2_RLE565.h"
+#include "images/default_4b/play1_RLE565.h"
+#include "images/default_4b/play2_RLE565.h"
+#include "images/default_4b/ready_RLE565.h"
+#include "images/default_4b/relativetimer1_RLE565.h"
+#include "images/default_4b/relativetimer2_RLE565.h"
+#include "images/default_4b/selectgame_RLE565.h"
+#include "images/default_4b/timeover_RLE565.h"
+#include "images/default_4b/blocks_RGB565_LE.h"
+#include "images/default_4b/cursor_RGB565_LE.h"
+#endif
+
 #if FORCESKIN == skinBlackWhite
 #include "images/black_white/background_RLE565.h"
 #include "images/black_white/highscores_RLE565.h"
@@ -74,6 +102,8 @@ static inline const uint16_t* ImageRow(const void* src, uint16_t* scratch, int c
 //the game draws the images with the sizes in defines.h, a skin has to keep to them
 #if FORCESKIN == skinDefault
 #define SKIN_IMAGE(name) default_##name
+#elif FORCESKIN == skinDefault4b
+#define SKIN_IMAGE(name) default_4b_##name
 #else
 #define SKIN_IMAGE(name) black_white_##name
 #endif
@@ -110,11 +140,28 @@ void preloadImages(void)
             ColorScoreTextNew = SCREEN.color565(255,115,152);
             break;
 #endif
+#if FORCESKIN == skinDefault4b
+        case skinDefault4b:
+            ColorStatusText = SCREEN.color565(255,255,255);
+            ColorScoreText = SCREEN.color565(0,0,0);
+            ColorScoreTextNew = SCREEN.color565(0,0,0);
+            //The pictures of this skin that are one bit a pixel, drawn beside the colour ones. The
+            //gold is one the colour art already uses: READY, GO and TIME OVER are a gradient from
+            //#E88008 to #F8DC38, and #F8D438 sits in the middle of it, so the line art reads as the
+            //same game rather than as another set of pictures. Behind it is an olive of the same hue, dark
+            //enough to keep the gold and the blocks reading and light enough to be seen as a colour
+            //rather than as black, so the line art is two shades of one colour instead of a contrast
+            ColorOneBitSet = SCREEN.color565(248, 212, 56);
+            ColorOneBitClear = SCREEN.color565(96, 80, 32);
+            break;
+#endif
 #if FORCESKIN == skinBlackWhite
         case skinBlackWhite:
             ColorStatusText = SCREEN.color565(255,255,255);
             ColorScoreText = SCREEN.color565(0,0,0);
             ColorScoreTextNew = SCREEN.color565(0,0,0);
+            ColorOneBitSet = SCREEN.color565(255,255,255);
+            ColorOneBitClear = SCREEN.color565(0,0,0);
             break;
 #endif
     }
@@ -163,6 +210,12 @@ void fillScreen(uint16_t color)
 
 void fillRect(int x, int y, int w, int h, uint16_t color)
 {
+    //while a strip is open the fill goes into it and not to the display, see bandrender.h
+    if (BandRender_Drawing())
+    {
+        BandRender_Fill(x, y, w, h, color);
+        return;
+    }
     GFX.fillRect(x, y, w, h, color);
 }
 
@@ -221,6 +274,33 @@ void printText(int16_t x, int16_t y, const char* str, uint16_t color, uint16_t b
 //reads, so the rows are read here with PLATFORM_READ_BYTES
 void drawImagePart(int x, int y, int sx, int sy, int w, int h, const uint8_t* data, int dataWidth, bool transparent)
 {
+    //while a strip is open the drawing goes into it and not to the display, see bandrender.h
+    if (BandRender_Drawing())
+    {
+#if FOURBITIMAGES
+        if (data && (PLATFORM_READ_BYTE(data) == FOURBIT_MAGIC))
+        {
+            BandRender_Image4Bit(x, y, sx, sy, w, h, data, transparent);
+            return;
+        }
+#endif
+#if ONEBITIMAGES
+        BandRender_ImageOneBit(x, y, sx, sy, w, h, data, transparent);
+#else
+        BandRender_Image(x, y, sx, sy, w, h, data, dataWidth);
+#endif
+        return;
+    }
+#if FOURBITIMAGES
+    //A mixed skin: the full screen pictures are one bit a pixel and the rest four, and a picture
+    //says which it is in its first byte. See FOURBIT_MAGIC and ONEBIT_MAGIC
+    if (data && (PLATFORM_READ_BYTE(data) == FOURBIT_MAGIC))
+    {
+        (void)dataWidth;
+        drawImage4BitPart(x, y, sx, sy, w, h, data, transparent);
+        return;
+    }
+#endif
 #if ONEBITIMAGES
     //the skin's pictures carry their own width, the one passed in is the RGB565 path's
     (void)dataWidth;
@@ -340,6 +420,34 @@ void drawImageTransparent(int x, int y, int w, int h, const uint8_t* data)
 //image data through plain pointers, but PROGMEM on the ESP8266 is flash that only takes 32 bit reads
 void drawImageRLEPart(int x, int y, int sx, int sy, int w, int h, const uint8_t* data, int dataWidth, int dataHeight, bool transparent)
 {
+    //while a strip is open the drawing goes into it and not to the display, see bandrender.h
+    if (BandRender_Drawing())
+    {
+#if FOURBITIMAGES
+        if (data && (PLATFORM_READ_BYTE(data) == FOURBIT_MAGIC))
+        {
+            BandRender_Image4Bit(x, y, sx, sy, w, h, data, transparent);
+            return;
+        }
+#endif
+#if ONEBITIMAGES
+        BandRender_ImageOneBit(x, y, sx, sy, w, h, data, transparent);
+#else
+        BandRender_ImageRLE(x, y, sx, sy, w, h, data, dataWidth, dataHeight, transparent);
+#endif
+        return;
+    }
+#if FOURBITIMAGES
+    //A mixed skin: the full screen pictures are one bit a pixel and the rest four, and a picture
+    //says which it is in its first byte. See FOURBIT_MAGIC and ONEBIT_MAGIC
+    if (data && (PLATFORM_READ_BYTE(data) == FOURBIT_MAGIC))
+    {
+        (void)dataWidth;
+        (void)dataHeight;
+        drawImage4BitPart(x, y, sx, sy, w, h, data, transparent);
+        return;
+    }
+#endif
 #if ONEBITIMAGES
     //the skin's pictures carry their own size, the ones passed in are the RGB565 path's
     (void)dataWidth;

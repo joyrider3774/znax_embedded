@@ -44,6 +44,11 @@
 //what libgba's IWRAM_CODE is, written out so that this header does not need libgba's own
 #define PLATFORM_FAST_CODE __attribute__((section(".iwram"), long_call))
 
+//without a screen buffer the game draws into the page that is not on the display, so a frame is never
+//seen half drawn and the band renderer has nothing to add here. See PLATFORM_OFFSCREEN_DRAW
+//in Platform.h
+#define PLATFORM_OFFSCREEN_DRAW 1
+
 //1 = the screen buffer is in IWRAM, the GBA's fast memory, 0 = in EWRAM. Everything the game draws
 //goes through the buffer, so IWRAM is a great deal faster, but IWRAM is only 32 KB and the game's own
 //globals live there as well: a game with big globals has no room for it and the build says so

@@ -81,6 +81,10 @@
 
 #define skinDefault 0
 #define skinBlackWhite 1
+//The default skin's art kept four bits a pixel with a sixteen colour palette of its own, see
+//tools/fourbit.py, except the five full screen pictures: at four bits one of those is 8232 bytes
+//however little is in it, so they are taken from the black & white art and stay one bit a pixel
+#define skinDefault4b 2
 
 //FORCESKIN: -1 = the default skin, or the black & white one with a 1 bpp buffer, n = skin n
 //(0 default, 1 black & white). There is no skin option in the game, so only the skin used is
@@ -102,13 +106,23 @@
 //routines in helperfuncs.cpp. Only the black & white skin is kept that way: it shows two
 //colours, and keeping each of them in sixteen bits costs both flash and the work of writing a
 //colour per pixel. Only one skin is ever built in, so the choice is known here
-#define ONEBITIMAGES (FORCESKIN == skinBlackWhite)
+//1 = the skin built in holds pictures one bit a pixel. The four bit skin holds some as well, its
+//full screen ones, so the one bit drawing is part of that build too and the two are told apart by
+//the first byte of a picture, see drawImagePart
+#define ONEBITIMAGES ((FORCESKIN == skinBlackWhite) || (FORCESKIN == skinDefault4b))
+
+//1 = the skin built in holds pictures four bits a pixel, drawn by drawImage4BitPart. It is a mixed
+//skin: the drawing routines tell the two apart by the first byte of a picture, so its full screen
+//pictures can stay one bit while the rest are in colour
+#define FOURBITIMAGES (FORCESKIN == skinDefault4b)
 
 //1 when the black & white skin is the only one in the build. Every picture is then one bit a pixel
 //and the paths that read RGB565 are dead: a build that is only ever going to draw one bit pictures
 //need not carry the index the run length encoded background is read through, which is a row table
 //the width of the screen
-#define ONEBITONLY ONEBITIMAGES
+//1 when every picture in the build is one bit a pixel, which the mixed four bit skin is not: the
+//paths that read RGB565 are dead only when nothing else is there
+#define ONEBITONLY (FORCESKIN == skinBlackWhite)
 
 #define FRAMERATE 30
 //1 = every frame waits until 1/FRAMERATE of a second has passed, 0 = a frame starts as soon

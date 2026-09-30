@@ -20,16 +20,35 @@ import sys
 from PIL import Image
 
 import onebit
+import fourbit
 
 FULLSCREEN_IMAGES = ["background", "highscores", "intro1", "intro2", "titlescreen"]
 WORD_IMAGES = ["credits", "credits1", "credits2", "fixedtimer1", "fixedtimer2", "go", "highscores1", "highscores2",
                "play1", "play2", "ready", "relativetimer1", "relativetimer2", "selectgame", "timeover"]
 RLE_IMAGES = FULLSCREEN_IMAGES + WORD_IMAGES
-SKIN_PREFIX = {"default": "default", "black_white": "black_white"}
+SKIN_PREFIX = {"default": "default", "black_white": "black_white", "default_4b": "default_4b"}
 #The black & white skin shows two colours, so it is packed one bit a pixel rather than kept as
 #RGB565, which is both smaller and quicker to draw, see tools/onebit.py. The pictures keep
 #their names, the game picks the routines to draw them with at build time
 ONE_BIT_SKINS = {"black_white"}
+#Skins whose pictures are written four bits a pixel with a palette of their own, see
+#tools/fourbit.py. The art sits in assets/skins like any other skin's, already cut to sixteen
+#colours by tools/make_4b_skin.py, so what the device shows is what is in the repository and a
+#picture that came out badly can be painted over by hand. The CHGame builds this one, see FORCESKIN
+FOUR_BIT_SKINS = {"default_4b"}
+#The pictures of a four bit skin that are stored one bit a pixel instead. At four bits a 128x128
+#picture is 8232 bytes however little is in it, and there are five of them; the menu words and the
+#game type words are lettering, which one bit suits. Their art in assets/skins/default_4b is the
+#line art, put there by tools/make_4b_skin.py
+FOUR_BIT_ONE_BIT_FROM = {
+    #the five full screen pictures, see the note above
+    "background", "titlescreen", "intro1", "intro2", "highscores",
+    #the menu words and the game type words, in both their states. They are lettering, which one
+    #bit suits, and keeping them that way is 2837 bytes of a device that has 50944 in all
+    "play1", "play2", "highscores1", "highscores2", "credits1", "credits2", "credits",
+    "fixedtimer1", "fixedtimer2", "relativetimer1", "relativetimer2", "selectgame",
+}
+
 COLOR_TRANSPARENT = 0x005F
 MAX_COUNT = 128
 
@@ -107,6 +126,17 @@ def convert(src, out, var, skin):
     """Writes the header for one full screen picture into out, in the format its skin is stored
     in. Every caller wants that same choice made, so it is made here and not in each of them."""
     width, height, pixels = to_rgb565(src)
+    #A picture of a four bit skin that is kept one bit a pixel, see FOUR_BIT_ONE_BIT_FROM. The
+    #choice is made here and not in main(): convert_skins.py calls this straight and would
+    #otherwise store every picture of the skin four bits a pixel
+    if (skin in FOUR_BIT_SKINS) and (os.path.basename(src)[:-4] in FOUR_BIT_ONE_BIT_FROM):
+        skin = "black_white"
+    if skin in FOUR_BIT_SKINS:
+        #these are drawn whole, so the pixels are packed
+        data, worst = fourbit.encode(pixels, width, height, COLOR_TRANSPARENT, True)
+        fourbit.write_header(out, os.path.basename(src), var, var + "_rle", width, height, data,
+                             "png2rle565.py")
+        return width, height, len(data)
     if skin in ONE_BIT_SKINS:
         data = onebit.encode(pixels, width, height, COLOR_TRANSPARENT)
         onebit.write_header(out, os.path.basename(src), var, var + "_rle", width, height, data,

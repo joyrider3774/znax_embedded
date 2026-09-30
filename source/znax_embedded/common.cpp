@@ -27,6 +27,8 @@ uint8_t needRedraw = 1;
 int movesLeft = 0;
 
 uint16_t ColorStatusText, ColorScoreText, ColorScoreTextNew;
+//white on black until a skin says otherwise, see preloadImages
+uint16_t ColorOneBitSet = 0xFFFF, ColorOneBitClear = 0x0000;
 
 const uint8_t* imgBackground, *imgHighScores, *imgIntro1, *imgIntro2, *imgTitleScreen;
 const uint8_t* imgCredits, *imgCredits1, *imgCredits2, *imgFixedTimer1, *imgFixedTimer2, *imgGo,

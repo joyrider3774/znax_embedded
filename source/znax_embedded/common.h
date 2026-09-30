@@ -31,6 +31,11 @@ extern int movesLeft;
 
 //the colours of the skin, set by preloadImages
 extern uint16_t ColorStatusText, ColorScoreText, ColorScoreTextNew;
+//The two colours a picture stored one bit a pixel is drawn in, set by the skin in preloadImages. A
+//one bit picture keeps no colour of its own: the converter turns every pixel into a set or a clear
+//bit by how bright it was, so repainting its png changes which pixels are set and not what they are
+//drawn in. These are what they are drawn in
+extern uint16_t ColorOneBitSet, ColorOneBitClear;
 
 //the images of the skin, set by preloadImages. The blocks and the cursor are raw RGB565, the
 //others run length encoded

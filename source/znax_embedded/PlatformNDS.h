@@ -33,6 +33,11 @@
 #error "SCREENBUFFER has to be 0, 1, 8 or 16 on the DS"
 #endif
 
+//without a screen buffer the game draws into the bitmap that is not on the display, so a frame is never
+//seen half drawn and the band renderer has nothing to add here. See PLATFORM_OFFSCREEN_DRAW
+//in Platform.h
+#define PLATFORM_OFFSCREEN_DRAW 1
+
 //1 = the frame is scaled to 192x192 by the DS's background scaling, as high as the display, in its
 //middle. 0 = it is shown 1:1 in the middle. A build can still set it itself
 #ifndef SCALESCREEN

@@ -26,7 +26,10 @@
 //Where drawing goes, the modes are described in PlatformESPboy.h. 20464 bytes of RAM leave room
 //for 0 (straight to the display) or a 1 bpp buffer, which is 2048 bytes. An 8 bpp buffer would be
 //16384 of the 20464 and leave nothing for the stack, the heap and the SD card, so it is not
-//offered. A build can still set this itself
+//offered. A build can still set this itself.
+//Not the 1 bpp buffer here, whatever it would do for how the drawing looks: it holds one bit a
+//pixel, so every colour of the four bit skin would come out as one of two. See SetBufferBit in
+//Platform.h, and the skin this device builds in FORCESKIN below
 #ifndef SCREENBUFFER
 #define SCREENBUFFER 0
 #endif
@@ -35,11 +38,14 @@
 #endif
 
 //Only one skin fits in the flash next to the game: -1 = every skin, n = only skin n, see
-//FORCESKIN in defines.h. The black & white skin is the one that is taken: its pictures are
-//packed one bit a pixel rather than kept as RGB565, which is what makes the game fit at all.
-//A 1 bpp buffer picks that skin itself, and a build can still ask for another one
+//FORCESKIN in defines.h. The four bit skin is the one that is taken: its pictures are packed
+//four bits a pixel with a palette of sixteen colours each rather than kept as RGB565, which is
+//what makes the game fit at all. Asking for SCREENBUFFER 1 takes the black & white skin instead,
+//a 1 bpp buffer holding two colours and no more, and a build can still name any skin itself
 #if !defined(FORCESKIN) && (SCREENBUFFER != 1)
-#define FORCESKIN skinBlackWhite
+//the four bit skin: the default skin's art in sixteen colours, with its five full screen pictures
+//left one bit a pixel because at four bits each of those alone is 8232 bytes. See skinDefault4b
+#define FORCESKIN skinDefault4b
 #endif
 
 //The pixel loops are put in ram rather than run from flash. The core fetches from flash with wait

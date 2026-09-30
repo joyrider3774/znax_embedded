@@ -29,6 +29,11 @@
 #error "SCREENBUFFER has to be 0, 1, 8 or 16 on the N64"
 #endif
 
+//without a screen buffer the game draws into the frame the RDP is handed, so a frame is never
+//seen half drawn and the band renderer has nothing to add here. See PLATFORM_OFFSCREEN_DRAW
+//in Platform.h
+#define PLATFORM_OFFSCREEN_DRAW 1
+
 //1 = the frame is scaled to 240x240, as high as the screen, in its middle. 0 = it is shown 1:1 in
 //the middle. A build can still set it itself
 #ifndef SCALESCREEN
