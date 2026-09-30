@@ -227,6 +227,16 @@ jobs:
           arduino-cli core install rp2040:rp2040@${CORE_RP2040}
           arduino-cli core install arduino:samd@${CORE_ARDUINO_SAMD}
           arduino-cli core install CHGame:ch32v@${CORE_CHGAME}
+          # The CHGame core's ch32yyxx.h asks for "core_riscv_cH32yyxx.h" where the file it means is
+          # core_riscv_ch32yyxx.h. On Windows, where that package is put together, the case makes no
+          # difference; here it does and the build stops at "No such file or directory". A link under
+          # the name it asks for leaves the package's own files as they are. Guarded both ways so a
+          # version that has this fixed needs no change here
+          CH32LIB="$HOME/.arduino15/packages/CHGame/hardware/ch32v/${CORE_CHGAME}/cores/arduino/ch32/lib"
+          if [ -f "$CH32LIB/core_riscv_ch32yyxx.h" ] && [ ! -e "$CH32LIB/core_riscv_cH32yyxx.h" ]; then
+            ln -s core_riscv_ch32yyxx.h "$CH32LIB/core_riscv_cH32yyxx.h"
+            echo "linked core_riscv_cH32yyxx.h, see the note above"
+          fi
           # the ESPboy draws with LovyanGFX, the PyBadge and PyGamer use the Adafruit libraries and
           # the Gamebuino META its own. The RP2040 and RP2350 devices need no library at all
           arduino-cli lib install "LovyanGFX@${LIB_LOVYANGFX}"
