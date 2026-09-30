@@ -40,11 +40,11 @@ endif()
 
 
 # -1 = the default skin, or black & white with a 1 bpp buffer, n = skin n (0 default,
-# 1 black & white), see FORCESKIN in defines.h. Change it with -DFORCESKIN=<n>
-set(FORCESKIN -1 CACHE STRING "FORCESKIN setting: -1 or 0 to 1")
-set_property(CACHE FORCESKIN PROPERTY STRINGS -1 0 1)
-if(NOT FORCESKIN MATCHES "^(-1|[0-1])$")
-    message(FATAL_ERROR "FORCESKIN has to be -1 or 0 to 1, not ${FORCESKIN}")
+# 1 black & white, 2 the four bit one), see FORCESKIN in defines.h. Change it with -DFORCESKIN=<n>
+set(FORCESKIN -1 CACHE STRING "FORCESKIN setting: -1 or 0 to 2")
+set_property(CACHE FORCESKIN PROPERTY STRINGS -1 0 1 2)
+if(NOT FORCESKIN MATCHES "^(-1|[0-2])$")
+    message(FATAL_ERROR "FORCESKIN has to be -1 or 0 to 2, not ${FORCESKIN}")
 endif()
 
 # 1 = frames are held to the game's frame rate, 0 = they run as fast as they go, see FPSLOCK

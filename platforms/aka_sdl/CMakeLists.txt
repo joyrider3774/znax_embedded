@@ -72,10 +72,10 @@ if(NOT SCALESCREEN MATCHES "^(0|1)$")
 endif()
 
 # -1 = the default skin, n = only skin n. See FORCESKIN in the game's defines
-set(FORCESKIN -1 CACHE STRING "FORCESKIN setting: -1 or 0 to 1")
-set_property(CACHE FORCESKIN PROPERTY STRINGS -1 0 1)
-if(NOT FORCESKIN MATCHES "^(-1|[0-1])$")
-    message(FATAL_ERROR "FORCESKIN has to be -1 or 0 to 1, not ${FORCESKIN}")
+set(FORCESKIN -1 CACHE STRING "FORCESKIN setting: -1 or 0 to 2")
+set_property(CACHE FORCESKIN PROPERTY STRINGS -1 0 1 2)
+if(NOT FORCESKIN MATCHES "^(-1|[0-2])$")
+    message(FATAL_ERROR "FORCESKIN has to be -1 or 0 to 2, not ${FORCESKIN}")
 endif()
 
 # 1 = the debug header is always shown, 0 = Up + Down shows and hides it

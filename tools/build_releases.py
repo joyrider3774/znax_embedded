@@ -98,7 +98,7 @@ SKETCH = "znax_embedded"
 CMAKE_TARGET = "znax"
 
 # how many skins the game has, so --forceskin takes -1 or 0 to SKINS - 1. See FORCESKIN in defines.h
-SKINS = 2
+SKINS = 3
 
 # (device, variant added to the file name, defines)
 TARGETS = [
