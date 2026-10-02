@@ -817,6 +817,21 @@ void Platform_PresentFrame(void)
 // Buttons
 // ===========================================================================
 
+//Back to the SD game menu, the way bateske's casino games do it (src/CHGame.cpp in
+//github.com/bateske/CHGame): a reset that carries no boot request, so the bootloader with the SD
+//game menu (platform/bootloader there) shows its menu, with this game preselected. The older
+//bootloader without a menu starts the game again
+void Platform_Exit(void)
+{
+	NVIC_SystemReset();
+}
+
+//START held for 3 seconds calls Platform_Exit, as in those games. Counted in milliseconds rather
+//than frames, so it takes as long whatever the frame rate
+#define CHGAME_EXIT_HOLD_MS 3000
+//when START went down, 0 while it is up
+static uint32_t startHeldSince = 0;
+
 uint8_t Platform_GetButtons(void)
 {
 	uint8_t buttons = 0;
@@ -836,7 +851,16 @@ uint8_t Platform_GetButtons(void)
 	if (digitalRead(PIN_BTN_SELECT) == LOW)
 		buttons |= BUTTON_L;
 	if (digitalRead(PIN_BTN_START) == LOW)
+	{
 		buttons |= BUTTON_R;
+		//| 1 keeps it from reading as "up" in the one millisecond where millis() is 0
+		if (!startHeldSince)
+			startHeldSince = millis() | 1;
+		else if ((millis() - startHeldSince) >= CHGAME_EXIT_HOLD_MS)
+			Platform_Exit();
+	}
+	else
+		startHeldSince = 0;
 	return buttons;
 }
 

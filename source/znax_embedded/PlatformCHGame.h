@@ -23,6 +23,11 @@
 //the display class offers LovyanGFX's calls, so the game takes its LovyanGFX drawing paths
 #define LOVYANGFX 1
 
+//Platform_Exit goes back to the SD game menu: a reset without a boot request, which the
+//bootloader with the menu (platform/bootloader in github.com/bateske/CHGame) answers with its
+//menu. START held for 3 seconds calls it, see Platform_GetButtons
+#define PLATFORM_HAS_EXIT 1
+
 //Where drawing goes, the modes are described in PlatformESPboy.h. 20464 bytes of RAM leave room
 //for 0 (straight to the display) or a 1 bpp buffer, which is 2048 bytes. An 8 bpp buffer would be
 //16384 of the 20464 and leave nothing for the stack, the heap and the SD card, so it is not

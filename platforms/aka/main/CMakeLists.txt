@@ -10,7 +10,7 @@ list(FILTER GAME_SOURCES EXCLUDE REGEX "Platform(ESPboy|Gamebuino|PyBadge|PicoSy
 idf_component_register(
     SRCS ${GAME_SOURCES}
     INCLUDE_DIRS "${GAME_DIR}"
-    REQUIRES gamebuino esp_timer
+    REQUIRES gamebuino esp_timer app_update
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

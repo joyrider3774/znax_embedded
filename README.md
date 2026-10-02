@@ -184,7 +184,7 @@ The Arduino devices are built with arduino-cli 1.5.1 and the versions below. The
 | Gamebuino META | gamebuino:samd 1.2.2 | Gamebuino META 1.3.3 |
 | Adafruit PyBadge, PyGamer | adafruit:samd 1.7.16 | Adafruit GFX Library 1.12.6, Adafruit ST7735 and ST7789 Library 1.5.15, Adafruit BusIO 1.17.4, Adafruit NeoPixel 1.15.5, Adafruit SPIFlash 5.1.1 |
 | PicoSystem, Explorer, Tufty 2350, Thumby Color | rp2040:rp2040 5.5.0 | none, everything they use comes with the core |
-| CHGame | CHGame:ch32v 0.2.2 | none, the core brings its own riscv-none-embed-gcc |
+| CHGame | CHGame:ch32v 0.2.4 | none, the core brings its own riscv-none-embed-gcc |
 
 The ESPboy draws through LovyanGFX and only includes TFT_eSPI's header, so the exact TFT_eSPI does not matter much.  
 The Gamebuino's core needs Arduino's own arduino:samd 1.8.14 beside it for sam.h, without it the build stops at "sam.h: No such file or directory".  

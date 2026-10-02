@@ -244,6 +244,15 @@ void Platform_PresentFrame(void);
 //the BUTTON_ bits of every button held down right now
 uint8_t Platform_GetButtons(void);
 
+//Leaves the game for the device's own game menu or launcher, where the platform has one (the
+//CHGame's SD game menu). A platform that has it defines PLATFORM_HAS_EXIT in its header and
+//writes the function; everywhere else this does nothing and the game carries on
+#ifdef PLATFORM_HAS_EXIT
+void Platform_Exit(void);
+#else
+static inline void Platform_Exit(void) { }
+#endif
+
 // ===========================================================================
 // Time, sound and memory
 // ===========================================================================

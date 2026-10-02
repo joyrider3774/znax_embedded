@@ -15,6 +15,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+//mkdir and the reason it failed, for the folder the save sits in
+#include <sys/stat.h>
+#include <errno.h>
 
 #include "PlatformGamebuinoFont.h"
 #include "gamebuino.h"
@@ -22,6 +25,15 @@
 #include "freertos/task.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
+//for Platform_Exit: the launcher's partition and the restart into it
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "esp_system.h"
+#include "esp_timer.h"
+//gb_ll_expander_read: the keys without the library's poll, see Platform_GetButtons
+#include "gb_ll_i2c.h"
+//gb_ll_expander_power_off: RUN on its own, see Platform_GetButtons
+#include "gb_ll_expander.h"
 
 //the AKA's panel
 #define DISPLAY_WIDTH 320
@@ -324,10 +336,73 @@ void Platform_PresentFrame(void)
 // Buttons
 // ===========================================================================
 
+//Back to the launcher, the way Jicehel's AKA games return to it (components/aka_runtime in his
+//ports, github.com/Jicehel-Aka): the launcher lives in the second app partition, OTA_1 ("loader"
+//in platforms/aka/partitions.csv, the App Store's app1), so that becomes the partition to boot
+//and the AKA restarts into it. Without one (a build flashed on its own with another table) it
+//does nothing and the game carries on
+void Platform_Exit(void)
+{
+	const esp_partition_t* loader = esp_partition_find_first(ESP_PARTITION_TYPE_APP,
+		ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
+	if (!loader)
+		return;
+	esp_ota_set_boot_partition(loader);
+	esp_restart();
+}
+
+//RUN and MENU held together for half a second call Platform_Exit: Jicehel's convention for the
+//AKA, and his timing (check_return_to_loader in his aka_runtime). In his games a long MENU on
+//its own takes a screenshot and a long RUN switches the AKA off, so neither is used alone here.
+//Counted in milliseconds, so it takes as long whatever the frame rate
+#define AKA_EXIT_HOLD_MS 500
+//when both went down, 0 while they are not
+static int64_t exitHeldSince = 0;
+//RUN is down, and whether it has been on its own all the while (no MENU), see Platform_GetButtons
+static bool runDown = false;
+static bool runAlone = false;
+
 uint8_t Platform_GetButtons(void)
 {
-	core.pool();
-	const uint16_t keys = core.buttons.state();
+	//The library's poll (core.pool, gb_buttons::update) switches the AKA off as soon as it sees
+	//RUN: it waits in gb_ll_expander_power_off for RUN to be released and then cuts the 3.3 V,
+	//so a RUN held with MENU would never reach the game (Jicehel's games build against a copy of
+	//the library where RUN no longer does that, set_run_power_off; this one builds against the
+	//official one). So the keys are read straight from the expander, the read that poll makes
+	//itself, and while RUN is down the poll is left out: the buttons come from that read
+	//and the joystick is read on its own. RUN is then handled below, the way the library would
+	//have, except when MENU joins it
+	const uint16_t raw = gb_ll_expander_read() & EXPANDER_KEY;
+	uint16_t keys;
+	if (raw & GB_KEY_RUN)
+	{
+		core.joystick.update();
+		keys = raw;
+	}
+	else
+	{
+		core.pool();
+		keys = core.buttons.state();
+	}
+	//RUN on its own switches the AKA off when it comes up, as the library does it (through its
+	//own power off, which cuts the 3.3 V once RUN is released). RUN that MENU joined at any point
+	//does not: that is the way back to the launcher, see Platform_Exit
+	if (keys & GB_KEY_RUN)
+	{
+		if (!runDown)
+		{
+			runDown = true;
+			runAlone = true;
+		}
+		if (keys & GB_KEY_MENU)
+			runAlone = false;
+	}
+	else if (runDown)
+	{
+		runDown = false;
+		if (runAlone)
+			gb_ll_expander_power_off();
+	}
 	uint8_t buttons = 0;
 	if (keys & GB_KEY_LEFT)  buttons |= BUTTON_LEFT;
 	if (keys & GB_KEY_RIGHT) buttons |= BUTTON_RIGHT;
@@ -343,6 +418,17 @@ uint8_t Platform_GetButtons(void)
 	if (jx >  500) buttons |= BUTTON_RIGHT;
 	if (jy < -500) buttons |= BUTTON_UP;
 	if (jy >  500) buttons |= BUTTON_DOWN;
+	//RUN and MENU together, see Platform_Exit
+	if ((keys & GB_KEY_RUN) && (keys & GB_KEY_MENU))
+	{
+		const int64_t now = esp_timer_get_time() / 1000;
+		if (!exitHeldSince)
+			exitHeldSince = now | 1;
+		else if ((now - exitHeldSince) >= AKA_EXIT_HOLD_MS)
+			Platform_Exit();
+	}
+	else
+		exitHeldSince = 0;
 	return buttons;
 }
 
@@ -417,6 +503,20 @@ void Platform_Log(const char* format, ...)
 // Saving
 // ===========================================================================
 
+//Makes the folder the save sits in, if it is not there already. A file cannot be opened for
+//writing in a folder that does not exist, and nothing was creating it: the first save did nothing
+//at all, fopen returning NULL and the write being dropped on the floor without a word.
+//The card is FAT, so long file names have to be on for a folder of more than eight characters to
+//be made at all, which Blockdude and Puzzleland both are. See CONFIG_FATFS_LFN_HEAP in
+//platforms/aka/sdkconfig
+static bool EnsureSaveFolder(void)
+{
+	if ((mkdir(saveFolder, 0777) == 0) || (errno == EEXIST))
+		return true;
+	Platform_Log("cannot make %s: %s\n", saveFolder, strerror(errno));
+	return false;
+}
+
 void Platform_StorageRead(uint16_t offset, uint8_t* data, uint16_t length)
 {
 	memset(data, 0, length);
@@ -442,6 +542,9 @@ void Platform_StorageWrite(uint16_t offset, const uint8_t* data, uint16_t length
 	if (offset + length > sizeof(block))
 		return;
 	memcpy(block + offset, data, length);
+	//the folder has to be there before a file can be opened in it
+	if (!EnsureSaveFolder())
+		return;
 	f = fopen(savePath, "wb");
 	if (!f)
 		return;
@@ -472,8 +575,21 @@ void Platform_Init(const char* appName)
 
 	if (appName && *appName)
 	{
-		snprintf(saveFolder, sizeof(saveFolder), MOUNT_POINT "/%s", appName);
-		snprintf(savePath, sizeof(savePath), "%s/save.bin", saveFolder);
+		//The folder the game's files sit in on the card, named the way the Gamebuino META build
+		//names its save folder (PlatformGamebuino.cpp): the first word of the game's name and
+		//_embedded, so "Znax v1.0" saves in /Znax_embedded, the znax_embedded folder the launcher
+		//has it in (the card does not mind the case). The repository's name, because other games
+		//called Sokoban and Waternet have folders of their own (Jicehel's Sokoban lives in
+		//SOKOBAN); the first word only, because appName carries the version and a save written
+		//by one version is meant to be read by the next
+		size_t n = 0;
+		while (appName[n] && (appName[n] != ' ') && (n < 16))
+			n++;
+		if (n)
+		{
+			snprintf(saveFolder, sizeof(saveFolder), MOUNT_POINT "/%.*s_embedded", (int)n, appName);
+			snprintf(savePath, sizeof(savePath), "%s/save.bin", saveFolder);
+		}
 	}
 }
 

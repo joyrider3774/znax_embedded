@@ -173,9 +173,18 @@ DEVICES = {
         #an empty function. The buzzer is driven from TIM1 in PlatformCHGame.cpp instead, so
         #nothing is lost by it. Naming it here means a later change of default cannot quietly
         #turn the sound off, or quietly cost the 5 KB
-        "fqbn": "CHGame:ch32v:CHGame:periph=game",
-        # The package brings its own riscv-none-embed-gcc, there is nothing to pin, and the board's
-        # own menu builds at -Os, which is what a device this tight wants
+        "fqbn": "CHGame:ch32v:CHGame:opt=osstd,periph=game",
+        #The Optimize menu is pinned as well, to "Smallest (-Os)", for the same reason the
+        #Peripherals menu is: a later change of default cannot quietly change what is built.
+        #Its oslto setting adds -flto, which is worth about 2.5 KB of the 50944 this device has,
+        #and it MISCOMPILES this game with the gcc 8.2 the core ships: the title screen draws its
+        #background and then nothing else, the menu never appears and the game stops. Measured on
+        #hardware 2026-10-01 with blips. What survives it is the drawing, what does not is the
+        #text: platformDisplay, the 4 byte pointer the display is reached through, is eliminated
+        #outright in the LTO build, so a devirtualised drawChar is the first place to look.
+        #--chgame-lto builds with it anyway, for anyone picking that up again
+        # The package brings its own riscv-none-embed-gcc, so there is nothing to pin for the
+        # toolchain; the core version the CI installs is CORE_CHGAME in .github/workflows
         "outputs": ["bin"],
         # It fits, with the artwork packed one bit a pixel: this device builds the black & white
         # skin alone and nothing else would go in beside it, see FORCESKIN and ONEBITIMAGES in the
@@ -958,6 +967,10 @@ def main():
                              "switch a device header leaves off, such as -DCHGAME_TIMING=1 "
                              "-DFPSLOCK=0 to have the CHGame report where a frame's time goes over "
                              "its USB serial. May be given more than once, and VALUE defaults to 1")
+    parser.add_argument("--chgame-lto", action="store_true",
+                        help="build the CHGame with -Os -flto rather than -Os. It makes the game "
+                             "about 2.5 KB smaller and it miscompiles with the gcc the core ships, "
+                             "see the CHGame entry in DEVICES. For working on that, not for a release")
     parser.add_argument("--list", action="store_true", help="list the builds and exit")
     parser.add_argument("--arduino", default=os.environ.get("ARDUINO_DIR", "C:/arduino"))
     parser.add_argument("--arduino2", default=os.environ.get("ARDUINO2_DIR", "C:/arduino2"),
@@ -1008,6 +1021,11 @@ def main():
         if unknown:
             parser.error("unknown device %s, the devices are %s" % (", ".join(unknown), ", ".join(DEVICES)))
         only = {names[d.lower()] for d in args.only}
+
+    # the CHGame's Optimize menu, which is part of the board name and not a define, see the note
+    # by its DEVICES entry for why -flto is not what it is normally built with
+    if args.chgame_lto:
+        DEVICES["CHGame"]["fqbn"] = DEVICES["CHGame"]["fqbn"].replace("opt=osstd", "opt=oslto")
 
     # the settings that change every build. They win over a device's own defines above, and --list
     # shows them because they are folded in here rather than when a build starts

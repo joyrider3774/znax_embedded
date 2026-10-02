@@ -25,7 +25,7 @@ env:
   # Kevin Bates' CH32X035 handheld. Its package is only published for the Arduino IDE 2 on a desktop,
   # but it is an ordinary board manager index, so arduino-cli installs it here like any other. It
   # brings its own riscv-none-embed-gcc, including an x86_64-linux-gnu build
-  CORE_CHGAME: 0.2.2
+  CORE_CHGAME: 0.2.4
   # the Gamebuino's core uses Arduino's own CMSIS-Atmel tool package for sam.h, which comes with the
   # arduino:samd core: without it the build stops at "sam.h: No such file or directory"
   CORE_ARDUINO_SAMD: 1.8.14

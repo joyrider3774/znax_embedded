@@ -21,6 +21,10 @@
 //the display class offers LovyanGFX's calls, so the game takes its LovyanGFX drawing paths
 #define LOVYANGFX 1
 
+//Platform_Exit goes back to the launcher (the App Store's, in the second app partition), as
+//Jicehel's games do. RUN and MENU held together call it, see Platform_GetButtons
+#define PLATFORM_HAS_EXIT 1
+
 //Where drawing goes, the modes are described in PlatformESPboy.h. Only a buffered frame can be
 //scaled, and with PSRAM there is room to spare: a 16 bpp buffer of the game's size is 32 KB.
 //A build can still set it itself
