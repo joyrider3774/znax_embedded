@@ -24,6 +24,7 @@
 #include <EEPROM.h>
 #include <hardware/spi.h>
 #include <hardware/gpio.h>
+#include <hardware/clocks.h>
 #include "PlatformGamebuinoFont.h"
 
 #define DISPLAY_WIDTH 240
@@ -158,6 +159,11 @@ void PlatformPicoSystemDisplay::init(void)
 	gpio_init(LCD_RESET_PIN);
 	gpio_set_dir(LCD_RESET_PIN, GPIO_OUT);
 	gpio_put(LCD_RESET_PIN, 1);
+	//The SPI clock is at most half the peripheral clock, which the core runs from the 48 MHz USB
+	//PLL: LCD_SPI_FREQ became 24 MHz (measured on a PicoSystem). From the system clock, 125 MHz
+	//(the build's freq=125), the SPI runs at the 62.5 MHz asked for
+	clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, clock_get_hz(clk_sys),
+	                clock_get_hz(clk_sys));
 	spi_init(LCD_SPI, LCD_SPI_FREQ);
 	gpio_set_function(LCD_SCK_PIN, GPIO_FUNC_SPI);
 	gpio_set_function(LCD_MOSI_PIN, GPIO_FUNC_SPI);

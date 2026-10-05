@@ -1064,14 +1064,24 @@ void Platform_Log(const char* format, ...)
 //
 // The whole block is kept in RAM as well and that is what the game reads, so a load costs nothing
 // and a write only happens when something actually changed.
+//
+// The magic value is the game's own. Every game of this kind keeps its save in the same two pages,
+// and CHGame's SD card menu installs a game by writing only the pages its image needs, so the
+// save of the game that was on before is still there when the next one starts. With one magic
+// for all of them a game took another's block for its own; the magic is made from the first word
+// of the name Platform_Init gets (the version after it changes from build to build, the game does
+// not) and CHGAME_SAVE_VARIANT, which a build of one level pack of a game sets so that each pack
+// keeps a save of its own.
 // ===========================================================================
 
 //the pages, and the size of one. The metadata page the bootloader keeps is at 0xF700
 #define CHGAME_FLASH_PAGE   256
 #define CHGAME_SAVE_PAGE_A  0xF500u
 #define CHGAME_SAVE_PAGE_B  0xF600u
-#define CHGAME_SAVE_MAGIC   0x47414843u   //"CHAG"
 #define CHGAME_SAVE_VERSION 1
+#ifndef CHGAME_SAVE_VARIANT
+#define CHGAME_SAVE_VARIANT 0
+#endif
 
 typedef struct ChGameSave ChGameSave;
 struct ChGameSave
@@ -1097,6 +1107,8 @@ static uint8_t storage[PLATFORM_STORAGE_SIZE];
 
 #if PLATFORM_STORAGE_SIZE <= CHGAME_SAVE_PAYLOAD_BOTH
 static uint16_t storageSeq = 0;
+//this game's magic value, set by StorageInit from its name
+static uint32_t storageMagic = 0;
 //1 once a write has failed to read back, after which nothing more is written
 static bool storageBroken = false;
 
@@ -1141,7 +1153,7 @@ static uint32_t StorageCrc(const uint8_t* data, uint32_t length)
 
 static bool StorageRecordOk(const ChGameSave* rec)
 {
-	return (rec->magic == CHGAME_SAVE_MAGIC) && (rec->version == CHGAME_SAVE_VERSION) &&
+	return (rec->magic == storageMagic) && (rec->version == CHGAME_SAVE_VERSION) &&
 	       (rec->crc == StorageCrc((const uint8_t*)rec, (uint32_t)(sizeof(ChGameSave) - sizeof(uint32_t))));
 }
 
@@ -1225,9 +1237,24 @@ static bool StorageWritePage(uint32_t addr, const ChGameSave* rec)
 	return true;
 }
 
+//FNV-1a over the first word of the name, case folded, then over the variant. Erased flash and
+//zeroed flash are never taken for a save, whatever the name hashes to
+static uint32_t StorageMagic(const char* appName)
+{
+	uint32_t h = 0x811C9DC5u;
+	for (const char* p = appName ? appName : ""; *p && (*p != ' '); p++)
+		h = (h ^ (uint8_t)((*p >= 'A' && *p <= 'Z') ? (*p + 32) : *p)) * 0x01000193u;
+	const uint32_t variant = (uint32_t)(CHGAME_SAVE_VARIANT);
+	for (uint8_t i = 0; i < 4; i++)
+		h = (h ^ ((variant >> (i * 8)) & 0xFFu)) * 0x01000193u;
+	if ((h == 0u) || (h == 0xFFFFFFFFu))
+		h = 0x47414843u;
+	return h;
+}
+
 static void StorageInit(const char* appName)
 {
-	(void)appName;
+	storageMagic = StorageMagic(appName);
 	//nothing saved yet reads as erased flash does elsewhere, which the game takes as never written
 	memset(storage, 0xFF, sizeof(storage));
 	storageSeq = 0;
@@ -1283,7 +1310,7 @@ void Platform_StorageWrite(uint16_t offset, const uint8_t* data, uint16_t length
 
 	static ChGameSave rec;
 	memset(&rec, 0, sizeof(rec));
-	rec.magic = CHGAME_SAVE_MAGIC;
+	rec.magic = storageMagic;
 	rec.version = CHGAME_SAVE_VERSION;
 	rec.seq = (uint16_t)(storageSeq + 1);
 	memcpy(rec.block, storage, sizeof(storage));

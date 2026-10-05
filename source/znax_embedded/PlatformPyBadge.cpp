@@ -108,6 +108,11 @@ void PlatformPyBadgeDisplay::init(void)
 	digitalWrite(TFT_BACKLIGHT_PIN, LOW);
 	//the display as Arcada starts it on both boards, turned to 160 wide and 128 high
 	initR(INITR_BLACKTAB);
+	//The SPI clock is at most half its SERCOM's clock, 48 MHz by default: the library's 32 MHz
+	//became 24 (measured on a PyGamer, 13.7 ms for a 160x128 frame). From the 100 MHz clock it
+	//runs at 50: 6.6 ms
+	SPI1.setClockSource(SERCOM_CLOCK_SOURCE_100M);
+	setSPISpeed(50000000);
 	setRotation(1);
 	//the strips left and right of the game's screen stay black
 	fillScreen(0x0000);
