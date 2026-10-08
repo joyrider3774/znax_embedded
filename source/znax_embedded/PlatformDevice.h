@@ -29,7 +29,7 @@
     //META too. The MKR boards have a board name of their own and do not
     #define PLATFORM_GAMEBUINO 1
   #elif defined(ARDUINO_ARCH_CH32)
-    //the CHGame's board package (github.com/bateske/CH32SerialBoot) has the one board, and it is
+    //the CHGame's board package (github.com/bateske/CHGame) has the one board, and it is
     //the only package here that builds for a CH32
     #define PLATFORM_CHGAME 1
   #elif defined(ARDUINO_PIMORONI_EXPLORER)

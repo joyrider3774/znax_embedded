@@ -7,7 +7,7 @@
 //The CHGame is Kevin Bates' handheld around a WCH CH32X035G8U6: a QingKe V4C (RISC-V, 48 MHz)
 //with 62 KB of flash, of which the USB bootloader keeps the first 12 KB and the game gets
 //50944 bytes, 20464 bytes of RAM and a 128x128 ST7735S on SPI1. The board package is
-//github.com/bateske/CH32SerialBoot, the display numbers below come from its own graphics
+//github.com/bateske/CHGame (0.3.0 or later), the display numbers below come from its own graphics
 //library github.com/bateske/CHGfx, which is what this panel is known to like.
 //
 //The game's screen is 128x128 and so is the display, so the picture fills it exactly and there

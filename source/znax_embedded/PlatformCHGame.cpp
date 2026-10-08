@@ -1,5 +1,5 @@
 //Platform.h for the CHGame, Kevin Bates' CH32X035 handheld. Nothing but the Arduino core of its
-//board package (github.com/bateske/CH32SerialBoot) is used, with the core's SPI library for the
+//board package (github.com/bateske/CHGame, 0.3.0 or later) is used, with the core's SPI library for the
 //display:
 //  display  ST7735S 128x128 on SPI1, chip select PA4, data/command PB0, reset PB12
 //  buttons  one GPIO each, pulled up and low while held

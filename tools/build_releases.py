@@ -161,7 +161,7 @@ DEVICES = {
         "folder": GAME + "_embedded",
     },
     "CHGame": {
-        # Kevin Bates' CH32X035 handheld, board package github.com/bateske/CH32SerialBoot. It is
+        # Kevin Bates' CH32X035 handheld, board package github.com/bateske/CHGame (0.3.0 on). It is
         # only published for the Arduino IDE 2, whose packages the IDE 1.8 folder does not hold, so
         # this one is built with the arduino-cli that IDE 2 ships and the rest with the IDE 1.8
         # folder, in the same run. "cli" below is what says so, and --arduino2 says where IDE 2 is
@@ -173,7 +173,7 @@ DEVICES = {
         #an empty function. The buzzer is driven from TIM1 in PlatformCHGame.cpp instead, so
         #nothing is lost by it. Naming it here means a later change of default cannot quietly
         #turn the sound off, or quietly cost the 5 KB
-        "fqbn": "CHGame:ch32v:CHGame:opt=osstd,periph=game",
+        "fqbn": "CHGame:ch32v:rev0:opt=osstd,periph=game",
         #The Optimize menu is pinned as well, to "Smallest (-Os)", for the same reason the
         #Peripherals menu is: a later change of default cannot quietly change what is built.
         #Its oslto setting adds -flto, which is worth about 2.5 KB of the 50944 this device has,
