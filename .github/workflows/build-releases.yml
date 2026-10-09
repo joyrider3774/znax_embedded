@@ -237,6 +237,19 @@ jobs:
             ln -s core_riscv_ch32yyxx.h "$CH32LIB/core_riscv_cH32yyxx.h"
             echo "linked core_riscv_cH32yyxx.h, see the note above"
           fi
+          # The game takes its buttons and sound from the board's CHGame library. Board package
+          # 0.3.0 links its libraries' objects whole, so CHGfx's DMA interrupt handler keeps its 8 KB
+          # framebuffer in the game even though it never draws with it, which leaves the game too
+          # little RAM. dot_a_linkage=true links them from archives instead (bateske/CHGame pull
+          # request 20); a package that already has it is left alone
+          CHLIBS="$HOME/.arduino15/packages/CHGame/hardware/ch32v/${CORE_CHGAME}/libraries"
+          for lib in CHGfx CHGame CHSd; do
+            props="$CHLIBS/$lib/library.properties"
+            if [ -f "$props" ] && ! grep -q "^dot_a_linkage=true" "$props"; then
+              printf '\ndot_a_linkage=true\n' >> "$props"
+              echo "dot_a_linkage=true added to $lib, see the note above"
+            fi
+          done
           # the ESPboy draws with LovyanGFX, the PyBadge and PyGamer use the Adafruit libraries and
           # the Gamebuino META its own. The RP2040 and RP2350 devices need no library at all
           arduino-cli lib install "LovyanGFX@${LIB_LOVYANGFX}"

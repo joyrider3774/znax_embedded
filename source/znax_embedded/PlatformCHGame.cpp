@@ -1,9 +1,10 @@
-//Platform.h for the CHGame, Kevin Bates' CH32X035 handheld. Nothing but the Arduino core of its
-//board package (github.com/bateske/CHGame, 0.3.0 or later) is used, with the core's SPI library for the
-//display:
+//Platform.h for the CHGame, Kevin Bates' CH32X035 handheld. Built with its board package
+//(github.com/bateske/CHGame, 0.3.0 or later), using the Arduino core with its SPI library for the
+//display and the board's CHGame library for the buttons and the sound:
 //  display  ST7735S 128x128 on SPI1, chip select PA4, data/command PB0, reset PB12
-//  buttons  one GPIO each, pulled up and low while held
-//  sound    the buzzer on PB10 through the core's tone(), which drives it from TIM3
+//  buttons  one GPIO each, pulled up and low while held, set up and read by the CHGame library
+//  sound    the buzzer on PB10, played by the CHGame library's sound engine, see the sound further
+//           down
 //  saves    a flash page the bootloader leaves alone, see the saved data further down
 //
 //The display numbers are the ones CHGfx (github.com/bateske/CHGfx) uses for this panel, which is
@@ -32,6 +33,14 @@
 #include <malloc.h>
 #include <Arduino.h>
 #include <SPI.h>
+//The board's CHGame library, which comes with its board package, for its buttons and its sound
+//only: the rest of it, and CHGfx under it, is drawing this game does itself. The whole library is
+//included because a sketch only finds a library by its main header. What is not used costs
+//nothing as long as the libraries are linked from archives (dot_a_linkage=true in their
+//library.properties, in the board package after 0.3.0). With 0.3.0 as released, CHGfx's DMA
+//interrupt handler keeps its 8 KB framebuffer in every sketch that includes it, which leaves this
+//game too little RAM
+#include <CHGame.h>
 //for SPI1's own registers, which the pixels go out through, see SpiSend below
 extern "C" {
 #include "ch32x035.h"
@@ -686,18 +695,11 @@ void Platform_Init(const char* appName)
 	DmaInit();
 	StorageInit(appName);
 
-	//the buzzer, which is driven from a timer rather than by the core's tone()
+	//the buzzer, through the CHGame library's sound engine
 	ToneInit();
 
-	//every button reads low while it is held
-	pinMode(PIN_BTN_UP, INPUT_PULLUP);
-	pinMode(PIN_BTN_DOWN, INPUT_PULLUP);
-	pinMode(PIN_BTN_LEFT, INPUT_PULLUP);
-	pinMode(PIN_BTN_RIGHT, INPUT_PULLUP);
-	pinMode(PIN_BTN_A, INPUT_PULLUP);
-	pinMode(PIN_BTN_B, INPUT_PULLUP);
-	pinMode(PIN_BTN_SELECT, INPUT_PULLUP);
-	pinMode(PIN_BTN_START, INPUT_PULLUP);
+	//every button pulled up and reading low while it is held, set up by the CHGame library
+	chgame.boot();
 	//the pin changes above rewrite the port's configuration, see the note at the top
 	ResetDriveHigh();
 
@@ -817,40 +819,43 @@ void Platform_PresentFrame(void)
 // Buttons
 // ===========================================================================
 
-//Back to the SD game menu, the way bateske's casino games do it (src/CHGame.cpp in
-//github.com/bateske/CHGame): a reset that carries no boot request, so the bootloader with the SD
-//game menu (platform/bootloader there) shows its menu, with this game preselected. The older
-//bootloader without a menu starts the game again
+//Back to the SD game menu, the way the CHGame library's own games do it: a reset that carries no
+//boot request, so the bootloader with the SD game menu shows its menu, with this game preselected.
+//A bootloader without a menu starts the game again
 void Platform_Exit(void)
 {
-	NVIC_SystemReset();
+	chgame_exitToMenu();
 }
 
 //START held for 3 seconds calls Platform_Exit, as in those games. Counted in milliseconds rather
-//than frames, so it takes as long whatever the frame rate
+//than frames, so it takes as long whatever the frame rate. The library counts it in calls of its
+//pollButtons, which only comes to 3 seconds at 60 of them a second, so the buttons are read with
+//its chgame_readButtons and the hold is timed here
 #define CHGAME_EXIT_HOLD_MS 3000
 //when START went down, 0 while it is up
 static uint32_t startHeldSince = 0;
 
 uint8_t Platform_GetButtons(void)
 {
+	//every button in one read of each port, pressed = 1
+	const uint8_t held = chgame_readButtons();
 	uint8_t buttons = 0;
-	if (digitalRead(PIN_BTN_LEFT) == LOW)
+	if (held & LEFT_BUTTON)
 		buttons |= BUTTON_LEFT;
-	if (digitalRead(PIN_BTN_UP) == LOW)
+	if (held & UP_BUTTON)
 		buttons |= BUTTON_UP;
-	if (digitalRead(PIN_BTN_DOWN) == LOW)
+	if (held & DOWN_BUTTON)
 		buttons |= BUTTON_DOWN;
-	if (digitalRead(PIN_BTN_RIGHT) == LOW)
+	if (held & RIGHT_BUTTON)
 		buttons |= BUTTON_RIGHT;
-	if (digitalRead(PIN_BTN_A) == LOW)
+	if (held & A_BUTTON)
 		buttons |= BUTTON_A;
-	if (digitalRead(PIN_BTN_B) == LOW)
+	if (held & B_BUTTON)
 		buttons |= BUTTON_B;
 	//the two side buttons, which the game uses to page through things
-	if (digitalRead(PIN_BTN_SELECT) == LOW)
+	if (held & SELECT_BUTTON)
 		buttons |= BUTTON_L;
-	if (digitalRead(PIN_BTN_START) == LOW)
+	if (held & START_BUTTON)
 	{
 		buttons |= BUTTON_R;
 		//| 1 keeps it from reading as "up" in the one millisecond where millis() is 0
@@ -865,102 +870,73 @@ uint8_t Platform_GetButtons(void)
 }
 
 // ===========================================================================
-// Sound: a square wave from TIM1 channel 2, which is the buzzer's pin
+// Sound: the CHGame library's sound engine (chgame/Audio.h)
 //
 // The board package builds without the timer module unless the Peripherals menu is set to Full,
 // and the core's tone() is then an empty function: the game would run and say nothing. Leaving
 // that module out is worth about 5 KB, which is the difference between fitting this device and
-// not, so the buzzer is driven here instead. The way is CHBlackjack's
-// (github.com/bateske/CHBlackjack): TIM1 is remapped so that its channel 2 comes out on PB10, and
-// the note is the timer's own period, so nothing is counted per sample the way the Gamebuino's
-// DAC is. How long a note lasts is counted in the core's 1 kHz tick, so no second timer is used.
+// not. The CHGame library plays the buzzer without it: TIM1 channel 2 on PB10, stepped by the
+// core's 1 kHz tick, the way the board's own games sound.
+//
+// Every tone is one of the library's effects: steps of a pitch in 20 Hz units and a length of up
+// to 510 ms, so a longer tone is several steps of the same pitch. A tone with no length plays
+// until the next tone, as an effect of the longest length (4 s), which the next tone cuts off.
+// As before, every tone replaces whatever was sounding, so what plays is always the last tone
+// asked for.
 // ===========================================================================
 
-//GPIOB's CFGHR cannot be read back, so the core keeps what was written to it here. Going through
-//the same place is what lets a pin be set up without undoing the core's own pins, see the note at
-//the top of this file
-extern "C" volatile uint32_t CFGHR_tmpB;
+//the longest tone is this many steps of 510 ms
+#define TONE_MAX_STEPS 8
 
-//milliseconds of the note still to play, 0 while nothing is counting down
-static volatile uint16_t toneLeft = 0;
+//Two of everything, so the steps being filled are never the ones the 1 kHz tick may still be
+//reading: each tone takes the pair the one before it did not
+static audio::Step toneSteps[2][TONE_MAX_STEPS];
+static audio::Effect toneEffects[2];
+static uint8_t toneWhich = 0;
 
-static void ToneSet(uint16_t freq)
-{
-	if (!freq)
-	{
-		//the output is let go of low, and the timer stopped
-		TIM1->CH2CVR = 0;
-		TIM1->SWEVGR = 1;
-		TIM1->CTLR1 = 0;
-		TIM1->INTFR = 0;
-		return;
-	}
-	//the timer counts at 1 MHz, so a period is microseconds and half of it is a square wave
-	uint32_t period = (1000000u + freq / 2u) / freq;
-	if (period < 2)
-		period = 2;
-	TIM1->CTLR1 = 0;
-	TIM1->ATRLR = (uint16_t)(period - 1);
-	TIM1->CH2CVR = (uint16_t)(period / 2);
-	TIM1->SWEVGR = 1;
-	TIM1->INTFR = 0;
-	TIM1->CTLR1 = 0x81;
-}
-
+//The effects are of the highest priority, 15, so that each one replaces whatever sounds, the rest
+//ToneSilence plays included
 static void ToneInit(void)
 {
-	RCC->APB2PCENR |= RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOB | RCC_APB2Periph_TIM1;
-	//channel 2 of TIM1 comes out on PB10 only with the partial remap
-	AFIO->PCFR1 = (AFIO->PCFR1 & ~(7u << 15)) | (1u << 15);
-	GPIOB->BCR = 1u << 10;
-	//PB10 to alternate function, push pull, through the core's own record of the register
-	const uint32_t cfg = (CFGHR_tmpB & ~(15u << 8)) | (11u << 8);
-	CFGHR_tmpB = cfg;
-	GPIOB->CFGHR = cfg;
-
-	TIM1->CTLR1 = 0;
-	TIM1->CTLR2 = 0;
-	TIM1->SMCFGR = 0;
-	TIM1->DMAINTENR = 0;
-	TIM1->CCER = 0;
-	TIM1->CHCTLR1 = 0x6800;     //channel 2 in PWM mode, its compare value preloaded
-	TIM1->CHCTLR2 = 0;
-	TIM1->PSC = 47;             //48 MHz down to 1 MHz, so a count is a microsecond
-	TIM1->RPTCR = 0;
-	TIM1->ATRLR = 999;
-	TIM1->CH2CVR = 0;
-	TIM1->CNT = 0;
-	TIM1->BDTR = 0x8000;        //the outputs are only driven with this set
-	TIM1->CCER = 0x10;
-	TIM1->SWEVGR = 1;
-	TIM1->INTFR = 0;
+	toneEffects[0] = { toneSteps[0], 1, 15 };
+	toneEffects[1] = { toneSteps[1], 1, 15 };
+	audio::begin(toneEffects, 2);
 }
 
-//the core calls this every millisecond, and it is a weak do nothing until something says otherwise
-extern "C" void osSystickHandler(void)
+//what is sounding goes quiet: a rest of 2 ms above every effect cuts it off
+static void ToneSilence(void)
 {
-	if (toneLeft && (--toneLeft == 0))
-		ToneSet(0);
+	audio::note(0, 2, 15);
 }
 
 void Platform_PlayTone(uint16_t freq, uint16_t duration)
 {
+	ToneSilence();
 	//a frequency of 0 is a rest
 	if (!freq)
-	{
-		toneLeft = 0;
-		ToneSet(0);
 		return;
+	const uint8_t hz = (uint8_t)((freq >= 5100) ? 255 : (freq + 10) / 20);
+	//a duration of 0 plays until the next tone
+	uint32_t left = duration ? duration : (uint32_t)TONE_MAX_STEPS * 510;
+	toneWhich ^= 1;
+	audio::Step* steps = toneSteps[toneWhich];
+	uint8_t n = 0;
+	while (left && (n < TONE_MAX_STEPS))
+	{
+		const uint32_t ms = (left > 510) ? 510 : left;
+		steps[n].hz = hz;
+		steps[n].endHz = 0;
+		steps[n].ms = (uint8_t)((ms + 1) / 2);
+		left -= ms;
+		n++;
 	}
-	ToneSet(freq);
-	//a duration of 0 means it plays until something stops it, which is what 0 does here as well
-	toneLeft = duration;
+	toneEffects[toneWhich].n = n;
+	audio::sfx(toneWhich);
 }
 
 void Platform_StopTone(void)
 {
-	toneLeft = 0;
-	ToneSet(0);
+	ToneSilence();
 }
 
 // ===========================================================================

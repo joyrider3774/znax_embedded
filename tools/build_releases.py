@@ -170,8 +170,8 @@ DEVICES = {
         #The Peripherals menu is pinned rather than left to its default. Its "game" setting
         #leaves the timer and UART modules out, which is worth about 5 KB and is the
         #difference between this game fitting and not, but it also makes the core's tone()
-        #an empty function. The buzzer is driven from TIM1 in PlatformCHGame.cpp instead, so
-        #nothing is lost by it. Naming it here means a later change of default cannot quietly
+        #an empty function. The buzzer is played by the board's CHGame library instead (see
+        #PlatformCHGame.cpp), so nothing is lost by it. Naming it here means a later change of default cannot quietly
         #turn the sound off, or quietly cost the 5 KB
         "fqbn": "CHGame:ch32v:rev0:opt=osstd,periph=game",
         #The Optimize menu is pinned as well, to "Smallest (-Os)", for the same reason the
