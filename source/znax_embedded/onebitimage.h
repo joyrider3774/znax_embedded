@@ -13,6 +13,19 @@
 #include "defines.h"
 #include "Platform.h"
 
+//Temporary, see CHGAME_TIMING in Platform.h: how many rows have been unpacked and how many have
+//been passed over to reach a frame further down a sheet, and where the time of composing a strip
+//goes. The frame report prints them, so that the cost of drawing is split between the pixels and
+//the unpacking rather than guessed at. A game that paints whole images rather than strips leaves
+//the three below at zero
+#if CHGAME_TIMING
+extern uint32_t oneBitRowsRead;
+extern uint32_t oneBitRowsSkipped;
+extern uint32_t bandBgUs;
+extern uint32_t bandSpriteUs;
+extern uint32_t bandCoverUs;
+#endif
+
 #if ONEBITIMAGES
 
 //what a set and a clear bit stand for, which is what the skin was drawn in
@@ -69,18 +82,6 @@ PLATFORM_FAST_CODE PLATFORM_HOT_CODE void OneBitReaderRow(OneBitReader* reader, 
 //them: a plane packed as rows may say that what comes next is one of these again, and then there
 //is nothing else to give it from
 PLATFORM_FAST_CODE PLATFORM_HOT_CODE void OneBitReaderSkip(OneBitReader* reader, int rows, int stride, uint8_t* row);
-//Temporary, see CHGAME_TIMING in Platform.h: how many rows have been unpacked and how many have
-//been passed over to reach a frame further down a sheet, and where the time of composing a strip
-//goes. The frame report prints them, so that the cost of drawing is split between the pixels and
-//the unpacking rather than guessed at. A game that paints whole images rather than strips leaves
-//the three below at zero
-#if CHGAME_TIMING
-extern uint32_t oneBitRowsRead;
-extern uint32_t oneBitRowsSkipped;
-extern uint32_t bandBgUs;
-extern uint32_t bandSpriteUs;
-extern uint32_t bandCoverUs;
-#endif
 
 //Reads the bit of column c out of an unpacked row. Inline, and deliberately: this is called for
 //every pixel of every one bit picture, and as a function of its own in another file it cost a call

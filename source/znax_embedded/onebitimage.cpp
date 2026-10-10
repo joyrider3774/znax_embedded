@@ -4,9 +4,8 @@
 #include "onebitimage.h"
 #include "common.h"
 
-#if ONEBITIMAGES
-
-//reads the bit of column c out of an unpacked row
+//The frame report's counters, see CHGAME_TIMING in Platform.h. They are not the one bit
+//drawing's own: a card build has no one bit pictures and still reports where a frame went
 #if CHGAME_TIMING
 uint32_t oneBitRowsRead = 0;
 uint32_t oneBitRowsSkipped = 0;
@@ -14,6 +13,10 @@ uint32_t bandBgUs = 0;
 uint32_t bandSpriteUs = 0;
 uint32_t bandCoverUs = 0;
 #endif
+
+#if ONEBITIMAGES
+
+//reads the bit of column c out of an unpacked row
 
 PLATFORM_HOT_CODE void OneBitReaderInit(OneBitReader* reader, const uint8_t* plane, int flags, bool forMask)
 {
