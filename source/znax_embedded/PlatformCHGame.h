@@ -47,6 +47,13 @@
 //PlatformCHGame.cpp): a flash build needs no library installed
 #if CARDIMAGES
 #define PLATFORM_HAS_CARD 1
+
+//1 = a run of whole blocks is fetched off the card with one multi-block command, see the card
+//stream in PlatformCHGame.cpp. 0 goes back to a command a block, which is what the measurement
+//it is worth was made against
+#ifndef CARD_MULTIBLOCK
+#define CARD_MULTIBLOCK 1
+#endif
 #endif
 
 #ifndef SCREENBUFFER

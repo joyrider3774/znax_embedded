@@ -957,12 +957,6 @@ void Platform_StopTone(void)
 //otherwise have to walk the chain
 #define CARD_MAX_RUNS 8
 
-//1 = a run of whole blocks is fetched with one multi-block command, see the stream below.
-//0 goes back to a command a block, which is what the measurement it is worth was made against
-#ifndef CARD_MULTIBLOCK
-#define CARD_MULTIBLOCK 1
-#endif
-
 static fat::Run cardRuns[CARD_MAX_RUNS];
 static uint8_t cardRunCount = 0;
 //A block on its way in. Four byte aligned because the card's DMA lands here, and a block of its
@@ -979,6 +973,14 @@ static uint8_t cardBlock2[512] __attribute__((aligned(4)));
 
 //Where a block of the file sits on the card, and how many blocks follow it without a break.
 //fat::read works this out for every single block; a run of them is wanted in one piece here
+//A one block stream lands its block in the first of the two buffers, so when that buffer is
+//cardBlock itself the block is already where the cache wants it and there is nothing to copy
+static void CardStreamKeep(const uint8_t* block, void* ctx)
+{
+	(void)block;
+	(void)ctx;
+}
+
 static bool CardWhere(uint32_t block, uint32_t* lba, uint32_t* runLeft)
 {
 	for (uint8_t i = 0; i < cardRunCount; i++)
@@ -1124,7 +1126,32 @@ bool Platform_CardRead(uint32_t offset, void* dst, uint32_t length)
 		{
 			if (cardBlockAt != block)
 			{
-					if (!fat::read(cardRuns, cardRunCount, block, cardBlock))
+				bool filled = false;
+#if CARD_MULTIBLOCK
+				//One block by CMD18 and DMA at 24 MHz rather than sd::read's bytes polled at 12 MHz:
+				//half the wire time, and the card is asked once rather than per byte. The block lands
+				//in cardBlock because that is the stream's first buffer, so the cache is filled just
+				//as before and everything that reads from it is unchanged.
+				//This is where a game that draws from a sheet too big for the arena spends its frame:
+				//a tile row is sixteen bytes and the rows of a sheet lie 256 apart, so every other row
+				//is a block the cache has not got. The long stream above never sees these, it only
+				//takes reads of 1024 bytes and up
+				uint32_t lba = 0, runLeft = 0;
+				if (CardWhere(block, &lba, &runLeft))
+				{
+					if (!sd::stream(lba, 1, cardBlock, cardBlock2, CardStreamKeep, NULL))
+					{
+						//as the long stream above: a stream that stopped leaves the card where only
+						//init() picks it up again
+						cardBlockAt = ~0u;
+						sd::init();
+						return false;
+					}
+					filled = true;
+				}
+#endif
+				//no run for it, or a build without the multi block path: the plain single block read
+				if (!filled && !fat::read(cardRuns, cardRunCount, block, cardBlock))
 				{
 					cardBlockAt = ~0u;
 					return false;
