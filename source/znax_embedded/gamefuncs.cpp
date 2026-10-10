@@ -120,9 +120,20 @@ static void PaintGameRect(int x, int y, int w, int h,
     CWorldParts_InvalidateRect(x, y, w, h);
     if (!BandRender_Begin(imgBackground, (int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h))
     {
+        //No strips on this device, so it goes straight to the screen in the order a strip would
+        //have held it: the background, the blocks of the cells the rectangle covers, and the
+        //overlay over them. The blocks belong in here rather than left to CWorldParts_Draw:
+        //only a cell the overlay hides whole counts as covered, so the ring of cells it covers
+        //in part was drawn on top of it afterwards and ate into its edges. GO is 38 by 37 in
+        //the middle of the screen and the cells are eight pixels on a nine pixel pitch, so it
+        //came up with six pixels gone from its left, four from its right, six from its top and
+        //seven from its bottom. READY never showed it: that one is drawn by the last block of
+        //DrawGameScreen, after the cells, and nothing paints over it
         drawBackgroundPart(x, y, w, h);
+        CWorldParts_DrawCleanCells(World);
         if (overlay)
             drawImageRLETransparent(ox, oy, ow, oh, overlay);
+        CWorldParts_MarkCleanDrawn(World);
         return;
     }
     while (BandRender_Next())

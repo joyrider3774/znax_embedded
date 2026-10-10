@@ -276,8 +276,12 @@ void CWorldParts_InvalidateRect(int x, int y, int w, int h)
 //two strips: it is drawn into both and the clipping in bandrender.cpp takes the right half
 void CWorldParts_DrawCleanCells(CWorldParts* WorldParts)
 {
-    const int top = BandRender_StripY();
-    const int bottom = top + BandRender_StripH();
+    //On a device that has no strips the caller painted the rectangle straight to the screen and
+    //calls this between the background and the overlay, so every row of the board is in it.
+    //BandRender_StripH is 0 there, which would have left the whole board out
+    const bool strip = BandRender_Drawing();
+    const int top = strip ? BandRender_StripY() : 0;
+    const int bottom = strip ? (top + BandRender_StripH()) : WINDOW_HEIGHT;
     int X,Y;
     for(Y=0;Y<NrOfRows;Y++)
     {
