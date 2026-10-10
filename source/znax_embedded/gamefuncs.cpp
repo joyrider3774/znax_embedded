@@ -212,6 +212,25 @@ void DrawGameScreen(bool ShowCursor, const uint8_t* Overlay, int OverlayWidth, i
         drawn = true;
     }
 
+    // The blocks a match clears all turn grey in the same frame, and all of them are replaced
+    // together 350ms later, so the rectangle they cover is painted in one pass like the cursor
+    // and the overlays are. Left to CWorldParts_Draw they went up a cell at a time and could be
+    // watched filling in, see CWorldParts_Step.
+    // Not while an overlay is up: the rectangle lies under it and would be painted over it. The
+    // cells an overlay hides are not drawn at all then, see CWorldParts_SetCovered
+    if (!Overlay && !shownOverlay)
+    {
+        int kx, ky, kw, kh;
+        if (CWorldParts_Step(World, &kx, &ky, &kw, &kh))
+        {
+            PaintGameRect(kx, ky, kw, kh, NULL, 0, 0, 0, 0);
+            //the cursor sits on top of a block, so the pass has wiped it
+            if (cursorShown && CellInRect(shownCursor.X, shownCursor.Y, kx, ky, kw, kh))
+                cursorShown = false;
+            drawn = true;
+        }
+    }
+
     bool cursorCellDrawn = false;
     drawn |= CWorldParts_Draw(World, position.X, position.Y, &cursorCellDrawn);
 

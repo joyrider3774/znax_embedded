@@ -38,6 +38,9 @@ struct CWorldParts
     SPoint Selects [4];
     int NumSelected,SelectedColor;
     uint32_t Time;
+    //the rectangle of the board the blocks a match cleared cover, in cells, which is both the
+    //rectangle that turns grey and the one that is filled with new blocks 350ms later
+    int8_t KilledX,KilledY,KilledEndX,KilledEndY;
     bool NeedToKillBlocks,NeedToAddBlocks;
 };
 typedef struct CWorldParts CWorldParts;
@@ -49,6 +52,10 @@ void CWorldParts_KillBlocks(CWorldParts* WorldParts);
 void CWorldParts_AddBlocks(CWorldParts* WorldParts);
 void CWorldParts_NewGame(CWorldParts* WorldParts);
 bool CWorldParts_Draw(CWorldParts* WorldParts, int CursorX, int CursorY, bool* CursorCellDrawn);
+//Turns the blocks a match cleared grey, and 350ms later puts new ones in their place, when either
+//is due. Returns true when one of them happened, with the rectangle of the screen those blocks
+//cover, for a caller that can paint it in one pass. See the note by it in cworldparts.cpp
+bool CWorldParts_Step(CWorldParts* WorldParts, int* x, int* y, int* w, int* h);
 void CWorldParts_InvalidateRect(int x, int y, int w, int h);
 //The rectangle an overlay is hiding, so the cells under it are left alone while it is up. 0 for
 //w or h means nothing is hidden. See the note by it in cworldparts.cpp

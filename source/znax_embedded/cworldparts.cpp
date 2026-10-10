@@ -53,8 +53,12 @@ void CBlock_DeSelect(CBlock* Block)
 
 void CBlock_Kill(CBlock* Block)
 {
-    Block->AnimPhase = 0;
+    //The last column of the sheet, the grey tile, and the animation is parked on it.
+    //AnimPhase was 0 here, which is the plain tile: the cell was drawn with that first and only
+    //the frame after it with the grey one, since CBlock_Animate is what puts AnimPhase at
+    //AnimBase. The whole rectangle a match clears was painted twice over
     Block->AnimBase = 6;
+    Block->AnimPhase = Block->AnimBase;
     Block->AnimCounter = 0;
     Block->AnimPhases = 1;
     Block->bNeedToKill = true;
@@ -103,6 +107,10 @@ CWorldParts* CWorldParts_Create()
     Result->NeedToAddBlocks = false;
     Result->NumSelected = 0;
     Result->SelectedColor = -1;
+    Result->KilledX = 0;
+    Result->KilledY = 0;
+    Result->KilledEndX = -1;
+    Result->KilledEndY = -1;
     for(Y=0;Y<NrOfRows;Y++)
         for(X=0;X<NrOfCols;X++)
         {
@@ -129,6 +137,12 @@ void CWorldParts_KillBlocks(CWorldParts* WorldParts)
     for(Y = StartY;Y<=EndY;Y++)
         for(X=StartX;X<=EndX;X++)
             CBlock_Kill(WorldParts->Items[X][Y]);
+    //kept for the screen to paint, and for CWorldParts_AddBlocks: the cells it replaces are
+    //these same ones, see CWorldParts_Step
+    WorldParts->KilledX = (int8_t)StartX;
+    WorldParts->KilledY = (int8_t)StartY;
+    WorldParts->KilledEndX = (int8_t)EndX;
+    WorldParts->KilledEndY = (int8_t)EndY;
 }
 
 int CWorldParts_MovesLeft(CWorldParts* WorldParts)
@@ -300,8 +314,15 @@ void CWorldParts_MarkCleanDrawn(CWorldParts* WorldParts)
 
 //Draws the blocks that differ from what their cell shows and moves the animations on. Returns if
 //anything was drawn, CursorCellDrawn is set when the cell at CursorX,CursorY was
-bool CWorldParts_Draw(CWorldParts* WorldParts, int CursorX, int CursorY, bool* CursorCellDrawn)
+//Both of these change a whole rectangle of the board in one go, so the rectangle is reported and
+//the screen paints it in one pass. Cell by cell the loop below paints each of them on its own, and
+//with the art on a card each one reads the piece of background it sits on by itself, eight reads a
+//cell: the blocks could be watched turning grey one after another, a fifth of a second for a four
+//by four match and over a second for the biggest. Only one of the two can fire in a call, the kill
+//sets the timer the replace waits on
+bool CWorldParts_Step(CWorldParts* WorldParts, int* x, int* y, int* w, int* h)
 {
+    bool changed = false;
     if(WorldParts->NeedToKillBlocks && (WorldParts->Time < getMillis()))
     {
         CWorldParts_KillBlocks(WorldParts);
@@ -310,6 +331,7 @@ bool CWorldParts_Draw(CWorldParts* WorldParts, int CursorX, int CursorY, bool* C
         WorldParts->Time = getMillis() + 350;
         SelectMusic(musNone, 0);
         SelectMusic(musClear, 0);
+        changed = true;
     }
 
     if (WorldParts->NeedToAddBlocks && (WorldParts->Time < getMillis()))
@@ -317,7 +339,30 @@ bool CWorldParts_Draw(CWorldParts* WorldParts, int CursorX, int CursorY, bool* C
         CWorldParts_AddBlocks(WorldParts);
         WorldParts->NeedToAddBlocks = false;
         WorldParts->NumSelected = 0;
+        changed = true;
     }
+
+    if (changed && (WorldParts->KilledEndX >= WorldParts->KilledX))
+    {
+        //the columns sit a pixel apart, see BlockScreenX, and the rectangle takes in the gaps
+        //between them: a repaint that leaves those out is what CWorldParts_InvalidateRect warns of
+        const int px = BlockScreenX(WorldParts->KilledX);
+        const int py = BlockScreenY(WorldParts->KilledY);
+        *x = px;
+        *y = py;
+        *w = BlockScreenX(WorldParts->KilledEndX) + TileWidth - px;
+        *h = BlockScreenY(WorldParts->KilledEndY) + TileHeight - py;
+        return true;
+    }
+    return false;
+}
+
+bool CWorldParts_Draw(CWorldParts* WorldParts, int CursorX, int CursorY, bool* CursorCellDrawn)
+{
+    //for when nobody asked for the rectangle, which is while an overlay is up: it lies over the
+    //board and the rectangle would be painted on top of it
+    int kx, ky, kw, kh;
+    CWorldParts_Step(WorldParts, &kx, &ky, &kw, &kh);
 
     bool drawn = false;
     int X,Y;
