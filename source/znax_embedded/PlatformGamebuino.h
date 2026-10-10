@@ -113,6 +113,12 @@ typedef PlatformGamebuinoBuffer PlatformBuffer;
 
 //flash is ordinary memory on the SAMD21, it can be read like any other
 #define PLATFORM_PROGMEM
+//There is a card slot on this device and the save file already uses it, so a build with
+//CARDIMAGES on can read its art off it too. See the card section of PlatformGamebuino.cpp
+#if CARDIMAGES
+#define PLATFORM_HAS_CARD 1
+#endif
+
 #define PLATFORM_READ_BYTE(addr) (*(const uint8_t*)(addr))
 
 //the images are little endian RGB565 like the SAMD21 itself, memcpy keeps a read from an odd

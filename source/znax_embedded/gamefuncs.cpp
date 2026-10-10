@@ -5,6 +5,7 @@
 #include "defines.h"
 #include "gamefuncs.h"
 #include "helperfuncs.h"
+#include "cardimages.h"
 #include "cworldparts.h"
 //the game screen is painted a strip at a time so nothing is seen half drawn
 #include "bandrender.h"
@@ -106,16 +107,31 @@ static bool DrawStatusBar()
 //seen where READY and GO had been, and the flicker under a cell that is drawn again.
 //The cells the rectangle only partly covers are left dirty for CWorldParts_Draw, which paints
 //their background itself. Without a strip buffer this is the plain way, see bandrender.h
-static void PaintGameRect(int x, int y, int w, int h)
+//Paints a rectangle of the game screen, and an overlay on top of it when one is given, in one
+//pass: the background, the blocks and the overlay all go into the strip buffer and the strip is
+//sent once it holds the finished picture.
+//The overlay belongs in the same pass as the erase. Done separately the display showed the old
+//overlay being wiped away, then the board coming back a strip at a time, and only then the new
+//overlay drawn on top of it a row at a time - a third of a second of visible redrawing between
+//READY and GO once the art came off a card rather than out of flash
+static void PaintGameRect(int x, int y, int w, int h,
+                          const uint8_t* overlay, int ox, int oy, int ow, int oh)
 {
     CWorldParts_InvalidateRect(x, y, w, h);
     if (!BandRender_Begin(imgBackground, (int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h))
     {
         drawBackgroundPart(x, y, w, h);
+        if (overlay)
+            drawImageRLETransparent(ox, oy, ow, oh, overlay);
         return;
     }
     while (BandRender_Next())
+    {
         CWorldParts_DrawCleanCells(World);
+        //into the same strip, clipped to it: the drawing calls go to the strip while one is open
+        if (overlay)
+            drawImageRLETransparent(ox, oy, ow, oh, overlay);
+    }
     CWorldParts_MarkCleanDrawn(World);
 }
 
@@ -131,24 +147,59 @@ static bool CellInRect(int X, int Y, int x, int y, int w, int h)
 //status bar and Overlay (NULL for none) in the middle of the screen
 void DrawGameScreen(bool ShowCursor, const uint8_t* Overlay, int OverlayWidth, int OverlayHeight)
 {
+    //What the overlay hides is not drawn: the blocks animate, so otherwise every frame put the
+    //tiles back under READY or GO and then drew the overlay over them again
+    if (Overlay)
+        CWorldParts_SetCovered((WINDOW_WIDTH - OverlayWidth) >> 1, (WINDOW_HEIGHT - OverlayHeight) >> 1,
+                               OverlayWidth, OverlayHeight);
+    else
+        CWorldParts_SetCovered(0, 0, 0, 0);
+
     bool drawn = false;
     if (needRedraw)
     {
         needRedraw = 0;
+#if CARDIMAGES
+        //a screen of its own is about to be drawn, so what the one before it cached can go
+        CardImages_Reset();
+#endif
         // the background and the blocks on it, the cursor, the text and the overlay come below
-        PaintGameRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+        PaintGameRect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, NULL, 0, 0, 0, 0);
         cursorShown = false;
         statusShown = false;
         shownOverlay = NULL;
     }
 
-    // an overlay that goes away leaves the background and the blocks under it to be drawn again
+    // An overlay that goes away leaves the background and the blocks under it to be drawn again,
+    // and the one that replaces it goes on in the same pass. The rectangle covers both of them,
+    // so READY is gone and GO is up by the time anything is sent to the display
     if (shownOverlay && (shownOverlay != Overlay))
     {
-        PaintGameRect(shownOverlayX, shownOverlayY, shownOverlayWidth, shownOverlayHeight);
-        if (cursorShown && CellInRect(shownCursor.X, shownCursor.Y, shownOverlayX, shownOverlayY, shownOverlayWidth, shownOverlayHeight))
+        const int nx = Overlay ? ((WINDOW_WIDTH - OverlayWidth) >> 1) : 0;
+        const int ny = Overlay ? ((WINDOW_HEIGHT - OverlayHeight) >> 1) : 0;
+        int rx = shownOverlayX, ry = shownOverlayY;
+        int rr = shownOverlayX + shownOverlayWidth, rb = shownOverlayY + shownOverlayHeight;
+        if (Overlay)
+        {
+            if (nx < rx) rx = nx;
+            if (ny < ry) ry = ny;
+            if (nx + OverlayWidth > rr) rr = nx + OverlayWidth;
+            if (ny + OverlayHeight > rb) rb = ny + OverlayHeight;
+        }
+        PaintGameRect(rx, ry, rr - rx, rb - ry, Overlay, nx, ny, OverlayWidth, OverlayHeight);
+        if (cursorShown && CellInRect(shownCursor.X, shownCursor.Y, rx, ry, rr - rx, rb - ry))
             cursorShown = false;
-        shownOverlay = NULL;
+        if (Overlay)
+        {
+            //it is up already, so the test further down leaves it alone
+            shownOverlayX = nx;
+            shownOverlayY = ny;
+            shownOverlayWidth = OverlayWidth;
+            shownOverlayHeight = OverlayHeight;
+            shownOverlay = Overlay;
+        }
+        else
+            shownOverlay = NULL;
         drawn = true;
     }
 
@@ -156,7 +207,7 @@ void DrawGameScreen(bool ShowCursor, const uint8_t* Overlay, int OverlayWidth, i
     SPoint position = Selector->CurrentPoint;
     if (cursorShown && (!ShowCursor || (position.X != shownCursor.X) || (position.Y != shownCursor.Y)))
     {
-        PaintGameRect(BlockScreenX(shownCursor.X), BlockScreenY(shownCursor.Y), cursorWidth, cursorHeight);
+        PaintGameRect(BlockScreenX(shownCursor.X), BlockScreenY(shownCursor.Y), cursorWidth, cursorHeight, NULL, 0, 0, 0, 0);
         cursorShown = false;
         drawn = true;
     }
@@ -174,8 +225,14 @@ void DrawGameScreen(bool ShowCursor, const uint8_t* Overlay, int OverlayWidth, i
 
     DrawStatusBar();
 
-    // the overlay lies over the board, it is drawn again when something under it may have been
-    if (Overlay && ((Overlay != shownOverlay) || drawn))
+    // The overlay is drawn when it is a new one, and then left alone. It used to be drawn again
+    // whenever anything had been drawn, but drawn is true for a block changing anywhere on the
+    // board and the blocks animate, so that was every frame: the picture was read from the card
+    // and put up again thirty times a second, and since a big one is read a row at a time it was
+    // visibly wiping itself in, clearing, and starting over. Nothing can draw inside its
+    // rectangle now - CWorldParts_SetCovered keeps the cells under it from being drawn, the
+    // cursor is not shown while one is up, and the status bar is above it - so once is enough
+    if (Overlay && (Overlay != shownOverlay))
     {
         shownOverlayX = (WINDOW_WIDTH - OverlayWidth) >> 1;
         shownOverlayY = (WINDOW_HEIGHT - OverlayHeight) >> 1;

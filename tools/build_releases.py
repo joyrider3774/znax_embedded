@@ -104,6 +104,10 @@ SKINS = 3
 TARGETS = [
     ("ESPboy", "", {}),
     ("GamebuinoMeta", "", {}),
+    # The art is read from the card, not built into the flash: every skin is on it in full
+    # RGB565 instead of the one four bit skin the flash holds, and the game is 76% of the flash
+    # rather than 95%. The card file the build writes beside it has to be on the card, see
+    # tools/mkcard.py and CARDIMAGES in defines.h
     ("CHGame", "", {}),
     ("PyBadge", "", {}),
     ("PyGamer", "", {}),
@@ -161,6 +165,8 @@ DEVICES = {
         "folder": GAME + "_embedded",
     },
     "CHGame": {
+        # its art is read from the card, so the build writes the card file too, see mkcard.py
+        "card": True,
         # Kevin Bates' CH32X035 handheld, board package github.com/bateske/CHGame (0.3.0 on). It is
         # only published for the Arduino IDE 2, whose packages the IDE 1.8 folder does not hold, so
         # this one is built with the arduino-cli that IDE 2 ships and the rest with the IDE 1.8
@@ -522,6 +528,32 @@ def build_arduino(device, defines, build_dir, cache_dir, arduino, log):
     return os.path.join(build_dir, SKETCH + ".ino")
 
 
+#The switches a CMakeLists names and validates itself get an option each; anything else a run asks
+#for is carried by EXTRA_DEFINES, which those files hand to the compiler untouched. A --define of a
+#switch with no option of its own used to go as a cache variable nothing reads, so it was accepted
+#and then quietly did nothing
+CMAKE_OPTIONS = ("SCREENBUFFER", "DITHERING", "FPSLOCK", "FORCEDEBUG", "FORCESKIN",
+                 "WINDOW_SCALE", "SCALESCREEN", "IMAGESET", "SOUNDVOLUME")
+
+
+def cmake_define_args(defines):
+    """the -D arguments for a CMake configure, the named switches and then the rest"""
+    named = {n: v for n, v in defines.items() if n in CMAKE_OPTIONS}
+    extra = {n: v for n, v in defines.items() if n not in CMAKE_OPTIONS}
+    args = ["-D%s=%s" % (n, v) for n, v in sorted(named.items())]
+    if extra:
+        args.append("-DEXTRA_DEFINES="
+                    + ";".join("%s=%s" % (n, v) for n, v in sorted(extra.items())))
+    return args
+
+
+def make_card(log):
+    """Writes the card file into releases/, by tools/mkcard.py. True when it is there"""
+    command = [sys.executable, os.path.join(HERE, "mkcard.py")]
+    with open(log, "w") as f:
+        return subprocess.run(command, stdout=f, stderr=subprocess.STDOUT).returncode == 0
+
+
 def build_windows(defines, build_dir, msys2, cross, lovyangfx, log):
     """Builds the exe with CMake and ninja from MSYS2, or with mingw-w64 when cross compiling from
     Linux, and returns the path of the exe without extension"""
@@ -533,7 +565,7 @@ def build_windows(defines, build_dir, msys2, cross, lovyangfx, log):
         # where LovyanGFX is, when it is not in the Arduino IDE's sketchbook the CMakeLists expects
         configure.append("-DLOVYANGFX_DIR=" + lovyangfx.replace(os.sep, "/"))
     configure += cross_settings(cross)
-    configure += ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
+    configure += cmake_define_args(defines)
     with open(log, "w") as f:
         for command in (configure, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
@@ -581,7 +613,7 @@ def build_libretro(defines, build_dir, msys2, libretro_common, cross, log):
     configure = [cmake, "-S", os.path.join(PLATFORMS, "libretro"), "-B", build_dir, "-G", "Ninja",
                  "-DCMAKE_BUILD_TYPE=Release", "-DLIBRETRO_COMMON_DIR=" + libretro_common]
     configure += cross_settings(cross)
-    configure += ["-D%s=%s" % (name, value) for name, value in sorted(defines.items())]
+    configure += cmake_define_args(defines)
     with open(log, "w") as f:
         for command in (configure, [cmake, "--build", build_dir]):
             if subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=env).returncode != 0:
@@ -1074,6 +1106,14 @@ def main():
         os.makedirs(build_dir)
         print("%-28s %s ..." % (tag, define_flags(defines)), end="", flush=True)
         start = time.time()
+
+        #A build that reads its art from a card needs that card's file, so it is made here and
+        #lands in releases/ beside the program: the two go together and a release of one without
+        #the other is of no use. See tools/mkcard.py
+        if DEVICES[device].get("card") and not make_card(log):
+            print(" FAILED to write the card file, see %s" % log)
+            failed.append(tag)
+            continue
 
         if DEVICES[device].get("cmake"):
             built = build_windows(defines, build_dir, args.msys2, cross, args.lovyangfx, log)

@@ -35,6 +35,20 @@
 //Not the 1 bpp buffer here, whatever it would do for how the drawing looks: it holds one bit a
 //pixel, so every colour of the four bit skin would come out as one of two. See SetBufferBit in
 //Platform.h, and the skin this device builds in FORCESKIN below
+//There is a card slot on this board, and this device reads its art off it rather than carrying
+//it in flash: every skin in full RGB565 instead of the one reduced skin that fits. See CARDIMAGES
+//in defines.h and the card file tools/mkcard.py writes.
+//Set here and not only by the build, so the Arduino IDE builds the same thing; -DCARDIMAGES=0
+//builds the old flash version. It has to be settled here, before the switches below that ask it
+#ifndef CARDIMAGES
+#define CARDIMAGES 1
+#endif
+//Only such a build, because saying so is what pulls the reader in (CHSd, see the card section of
+//PlatformCHGame.cpp): a flash build needs no library installed
+#if CARDIMAGES
+#define PLATFORM_HAS_CARD 1
+#endif
+
 #ifndef SCREENBUFFER
 #define SCREENBUFFER 0
 #endif
@@ -47,7 +61,9 @@
 //four bits a pixel with a palette of sixteen colours each rather than kept as RGB565, which is
 //what makes the game fit at all. Asking for SCREENBUFFER 1 takes the black & white skin instead,
 //a 1 bpp buffer holding two colours and no more, and a build can still name any skin itself
-#if !defined(FORCESKIN) && (SCREENBUFFER != 1)
+//A card build names no skin: every one of them is on the card in full RGB565 and the game is
+//asked for one while it runs, see CardImages_UseSkin
+#if !defined(FORCESKIN) && (SCREENBUFFER != 1) && !CARDIMAGES
 //the four bit skin: the default skin's art in sixteen colours, with its five full screen pictures
 //left one bit a pixel because at four bits each of those alone is 8232 bytes. See skinDefault4b
 #define FORCESKIN skinDefault4b
@@ -142,6 +158,7 @@ typedef PlatformCHGameBuffer PlatformBuffer;
 
 //flash is ordinary memory on the CH32X035, it can be read like any other
 #define PLATFORM_PROGMEM
+
 #define PLATFORM_READ_BYTE(addr) (*(const uint8_t*)(addr))
 
 //the images are little endian RGB565 like the chip itself, memcpy keeps a read from an odd

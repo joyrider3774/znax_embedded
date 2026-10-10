@@ -51,6 +51,12 @@ int16_t BandRender_StripH(void);
 bool BandRender_Drawing(void);
 void BandRender_Fill(int x, int y, int w, int h, uint16_t color);
 void BandRender_Image(int x, int y, int sx, int sy, int w, int h, const uint8_t* data, int dataWidth);
+#if CARDIMAGES
+//a picture read from the card, which carries its own width and may leave its transparent colour
+//out. See cardimages.h
+void BandRender_ImageCard(int x, int y, int sx, int sy, int w, int h, const uint8_t* data,
+                          bool transparent);
+#endif
 #if ONEBITIMAGES
 //a picture kept one bit a pixel, which is the whole black & white skin and the full screen
 //pictures of the four bit one

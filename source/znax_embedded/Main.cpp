@@ -12,6 +12,8 @@
 #include "cworldparts.h"
 #include "gamefuncs.h"
 #include "helperfuncs.h"
+//the art read from a card, which a card build finds before it points anything at it
+#include "cardimages.h"
 #include "state_gametypemenu.h"
 #include "state_credits.h"
 #include "state_titlescreen.h"
@@ -85,6 +87,24 @@ static void printDebugCpuRamLoad()
     }
 }
 
+#if CARDIMAGES
+//Says what is wrong with the card and leaves it on the screen. Drawn with the display's own font
+//and fills, since every picture the game has is on the card that is not there
+static void CardFailScreen(const char* problem)
+{
+	fillScreen(SCREEN.color565(0, 0, 0));
+	printText(6, 40, "CARD PROBLEM", SCREEN.color565(255, 255, 255), SCREEN.color565(0, 0, 0), 1);
+	printText(6, 56, problem ? problem : "UNKNOWN", SCREEN.color565(255, 80, 80),
+	          SCREEN.color565(0, 0, 0), 1);
+	printText(6, 80, "PUT " CARD_FILE_NAME, SCREEN.color565(160, 160, 160),
+	          SCREEN.color565(0, 0, 0), 1);
+	printText(6, 92, "ON THE CARD", SCREEN.color565(160, 160, 160),
+	          SCREEN.color565(0, 0, 0), 1);
+	Platform_PresentFrame();
+	Platform_Log("card: %s\n", problem ? problem : "unknown");
+}
+#endif
+
 void Game_Setup(void)
 {
     //webAppStore is set in Platform_Init
@@ -99,6 +119,16 @@ void Game_Setup(void)
         initMusic();
         setSoundOn(true);
         setMusicOn(true);
+#if CARDIMAGES
+        //The art is on the card, so it is found before anything is pointed at it. Without it the
+        //game has no pictures at all and there is nothing worth starting: the screen says what is
+        //wrong and the game stops there
+        if (!CardImages_Open())
+        {
+            CardFailScreen(CardImages_Problem());
+            return;
+        }
+#endif
         preloadImages();
         //with a 1 bpp buffer, the colours its set and clear bits are shown in. The skin is
         //always black & white there

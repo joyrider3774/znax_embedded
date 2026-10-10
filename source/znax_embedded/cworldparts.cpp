@@ -211,6 +211,33 @@ void CWorldParts_Destroy(CWorldParts* WorldParts)
 //the columns sit a pixel apart and a repaint that goes cell by cell leaves those gaps as they were.
 //What was over them, an overlay say, stays on the screen. The whole rectangle's background has to
 //be painted, which is what CWorldParts_InvalidateRect is paired with
+//The part of the board an overlay is hiding, or nothing when w or h is 0.
+//A cell it covers whole is not drawn at all: the blocks animate, so without this every frame
+//drew the tiles under READY or GO and then drew the overlay again on top of them, and with the
+//art read from a card each of those is slow enough to watch. The cells keep whatever they last
+//showed, so they are wrong underneath; CWorldParts_InvalidateRect puts them right when the
+//overlay goes, which is what happens anyway
+static int coveredX = 0, coveredY = 0, coveredW = 0, coveredH = 0;
+
+void CWorldParts_SetCovered(int x, int y, int w, int h)
+{
+    coveredX = x;
+    coveredY = y;
+    coveredW = w;
+    coveredH = h;
+}
+
+//true when the overlay hides every pixel of this cell
+static bool CellCovered(int X, int Y)
+{
+    if ((coveredW <= 0) || (coveredH <= 0))
+        return false;
+    const int cx = BlockScreenX(X);
+    const int cy = BlockScreenY(Y);
+    return (cx >= coveredX) && (cx + TileWidth <= coveredX + coveredW) &&
+           (cy >= coveredY) && (cy + TileHeight <= coveredY + coveredH);
+}
+
 void CWorldParts_InvalidateRect(int x, int y, int w, int h)
 {
     int X,Y;
@@ -246,7 +273,12 @@ void CWorldParts_DrawCleanCells(CWorldParts* WorldParts)
         if ((cy + TileHeight <= top) || (cy >= bottom))
             continue;
         for(X=0;X<NrOfCols;X++)
-            if (shownBlock[X][Y] == cellClean)
+            //Dirty as well as clean. A cell the rectangle only partly covers is marked dirty,
+            //meaning it wants its background painting before its block - but inside a strip the
+            //background of the whole rectangle is already there, so it is drawn like any other.
+            //Left to the ordinary path instead, those cells were never put back and the board
+            //came up with a ring of bare background one cell wide around where the overlay was
+            if ((shownBlock[X][Y] == cellClean) || (shownBlock[X][Y] == cellDirty))
                 CBlock_Draw(WorldParts->Items[X][Y]);
     }
 }
@@ -258,7 +290,8 @@ void CWorldParts_MarkCleanDrawn(CWorldParts* WorldParts)
     int X,Y;
     for(Y=0;Y<NrOfRows;Y++)
         for(X=0;X<NrOfCols;X++)
-            if (shownBlock[X][Y] == cellClean)
+            //the same two the pass drew, see CWorldParts_DrawCleanCells
+            if ((shownBlock[X][Y] == cellClean) || (shownBlock[X][Y] == cellDirty))
             {
                 CBlock* Block = WorldParts->Items[X][Y];
                 shownBlock[X][Y] = (int16_t)(Block->Color * 16 + Block->AnimPhase);
@@ -293,6 +326,12 @@ bool CWorldParts_Draw(CWorldParts* WorldParts, int CursorX, int CursorY, bool* C
         {
             CBlock* Block = WorldParts->Items[X][Y];
             const int16_t shown = (int16_t)(Block->Color * 16 + Block->AnimPhase);
+            //nothing of this cell can be seen, so drawing it would only be undone by the overlay
+            if (CellCovered(X, Y))
+            {
+                CBlock_Animate(Block);
+                continue;
+            }
             if (shown != shownBlock[X][Y])
             {
                 //the blocks have transparent corners, what was under them has to go first

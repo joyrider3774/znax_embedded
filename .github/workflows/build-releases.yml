@@ -279,6 +279,11 @@ jobs:
           git clone --depth 1 https://github.com/jmp42/Gamebuino_AKA_lib.git \
             "$HOME/toolchains/Gamebuino_AKA_lib"
 
+      # tools/mkcard.py reads the skins' pictures with it, and a card build writes the card file
+      # as part of itself. The runner has python but not this
+      - name: Install Pillow, for the card file
+        run: python3 -m pip install --quiet --break-system-packages Pillow
+
       - name: Build every device
         run: |
           # emcc finds its own config and node through this, the browser build needs both

@@ -90,7 +90,12 @@ find_package(SDL2 REQUIRED COMPONENTS SDL2-static)
 
 # WIN32: a Windows (GUI) program, started it opens no console window next to the game's own
 add_executable(znax WIN32 ${GAME_SOURCES} ${LGFX_SOURCES})
-target_compile_definitions(znax PRIVATE PLATFORM_SDL LGFX_SDL SCREENBUFFER=${SCREENBUFFER} DITHERING=${DITHERING} FPSLOCK=${FPSLOCK} FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG} WINDOW_SCALE=${WINDOW_SCALE})
+# The switches above are named one by one because they are validated; this carries
+# anything else a build asks for, so a switch with no option of its own can still be
+# set. See --define in tools/build_releases.py
+set(EXTRA_DEFINES "" CACHE STRING "extra compile definitions, NAME=VALUE, semicolon separated")
+
+target_compile_definitions(znax PRIVATE PLATFORM_SDL LGFX_SDL SCREENBUFFER=${SCREENBUFFER} DITHERING=${DITHERING} FPSLOCK=${FPSLOCK} FORCESKIN=${FORCESKIN} FORCEDEBUG=${FORCEDEBUG} WINDOW_SCALE=${WINDOW_SCALE} ${EXTRA_DEFINES})
 target_include_directories(znax PRIVATE "${GAME_DIR}" "${LOVYANGFX_DIR}/src")
 target_link_libraries(znax PRIVATE SDL2::SDL2-static)
 

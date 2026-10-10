@@ -795,6 +795,60 @@ static void StorageInit(const char* appName)
 	}
 }
 
+// ===========================================================================
+// The card
+// ===========================================================================
+
+//Only a build that reads its art from a card, see CARDIMAGES in defines.h. The card itself is
+//already up for the save file above, so this only opens a second file on it
+#if PLATFORM_HAS_CARD
+
+//the game's data file, kept open: a read is then a seek and a read
+static File cardFile;
+
+bool Platform_CardOpen(const char* name, const char* name83)
+{
+	(void)name83;   //only a reader that walks a FAT directory itself wants that form
+	Platform_CardClose();
+	if (!sdReady)
+	{
+		//StorageInit opens the card for the save file. If there was none then, try once more
+		sdReady = sd.begin(SD_CS_PIN, SD_SCK_MHZ(12));
+		if (!sdReady)
+		{
+			Platform_Log("no SD card, so there is no art to draw\n");
+			return false;
+		}
+	}
+	//in the card's root, which is where the player is told to put it
+	char path[32];
+	snprintf(path, sizeof(path), "/%s", name);
+	cardFile = sd.open(path, O_RDONLY);
+	if (!cardFile)
+	{
+		Platform_Log("no %s on the card\n", path);
+		return false;
+	}
+	return true;
+}
+
+bool Platform_CardRead(uint32_t offset, void* dst, uint32_t length)
+{
+	if (!cardFile)
+		return false;
+	if (!cardFile.seekSet(offset))
+		return false;
+	return cardFile.read(dst, length) == (int)length;
+}
+
+void Platform_CardClose(void)
+{
+	if (cardFile)
+		cardFile.close();
+}
+
+#endif
+
 void Platform_StorageRead(uint16_t offset, uint8_t* data, uint16_t length)
 {
 	memcpy(data, storage + offset, length);

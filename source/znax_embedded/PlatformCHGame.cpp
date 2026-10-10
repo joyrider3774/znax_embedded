@@ -940,6 +940,215 @@ void Platform_StopTone(void)
 }
 
 // ===========================================================================
+// The card
+// ===========================================================================
+
+//Only built when the device header asked for it, which it does for a build with CARDIMAGES on:
+//saying so is what pulls CHSd in, and a flash build needs no library installed
+#if PLATFORM_HAS_CARD
+
+//CHSd, github.com/EthansCritters, the card reader written for this board: raw 512 byte blocks
+//along a file's FAT extents, with no directory walking once the file is found
+#include <SdSpi.h>
+#include <Fat.h>
+
+//How many pieces of the card the data file may lie in. A file copied to a freshly formatted card
+//is one; past this it is refused and the game says to copy it again, because every read would
+//otherwise have to walk the chain
+#define CARD_MAX_RUNS 8
+
+//1 = a run of whole blocks is fetched with one multi-block command, see the stream below.
+//0 goes back to a command a block, which is what the measurement it is worth was made against
+#ifndef CARD_MULTIBLOCK
+#define CARD_MULTIBLOCK 1
+#endif
+
+static fat::Run cardRuns[CARD_MAX_RUNS];
+static uint8_t cardRunCount = 0;
+//A block on its way in. Four byte aligned because the card's DMA lands here, and a block of its
+//own rather than borrowing the panel's chunk buffers: those are 128 bytes each here, not the 512
+//a card block is, so there is nothing to borrow
+static uint8_t cardBlock[512] __attribute__((aligned(4)));
+//which block is in it, so a second read inside the same one costs nothing. A row of a full screen
+//picture is 256 bytes, so every other row of one used to fetch a block it already had. ~0u is none
+static uint32_t cardBlockAt = ~0u;
+#if CARD_MULTIBLOCK
+//The second buffer a multi-block read needs: it lands one block by DMA while the one before it is
+//being copied out, so it wants two and takes them in turn. See the stream below
+static uint8_t cardBlock2[512] __attribute__((aligned(4)));
+
+//Where a block of the file sits on the card, and how many blocks follow it without a break.
+//fat::read works this out for every single block; a run of them is wanted in one piece here
+static bool CardWhere(uint32_t block, uint32_t* lba, uint32_t* runLeft)
+{
+	for (uint8_t i = 0; i < cardRunCount; i++)
+	{
+		if (block < cardRuns[i].blocks)
+		{
+			*lba = cardRuns[i].lba + block;
+			*runLeft = cardRuns[i].blocks - block;
+			return true;
+		}
+		block -= cardRuns[i].blocks;
+	}
+	return false;
+}
+
+//Where the blocks of a stream are copied to, how much is still wanted, and how much of the
+//first block lies before it: a picture does not begin on a block boundary, so a read of it
+//starts partway into one and the rest follows whole
+struct CardStream { uint8_t* out; uint32_t left, skip; };
+
+static void CardStreamBlock(const uint8_t* block, void* ctx)
+{
+	CardStream* s = (CardStream*)ctx;
+	//only the first block of a stream has anything before the part that was asked for
+	const uint32_t from = s->skip;
+	s->skip = 0;
+	uint32_t take = 512 - from;
+	if (take > s->left)
+		take = s->left;
+	memcpy(s->out, block + from, take);
+	s->out += take;
+	s->left -= take;
+}
+#endif
+
+bool Platform_CardOpen(const char* name, const char* name83)
+{
+	cardRunCount = 0;
+	//THE BUS RULE: the card and the panel share SPI1, and CHSd takes it over (it deselects the
+	//panel on PA4, keeps SPI1's CTLR1, selects the card on PB11, and puts CTLR1 back). So nothing
+	//of the panel's may still be going out. DMA1 channel 3 is borrowed by it and handed back with
+	//its CFGR clear, which DmaSend writes in full every send, and its PADDR is the same address
+	//this platform gives it, so there is nothing to put back here
+	DmaWait();
+	if (!sd::init())
+	{
+		Platform_Log("card: none, or it did not answer\n");
+		return false;
+	}
+	int8_t rc = fat::mount(cardBlock);
+	if (rc)
+	{
+		Platform_Log("card: no FAT16 or FAT32 volume (%d)\n", (int)rc);
+		return false;
+	}
+	fat::File file;
+	//the eleven character form, which is how a FAT directory entry holds a name
+	rc = fat::find(name83, file, cardBlock);
+	if (rc)
+	{
+		Platform_Log("card: no %s in the root (%d)\n", name, (int)rc);
+		return false;
+	}
+	rc = fat::runs(file, cardRuns, CARD_MAX_RUNS, cardBlock);
+	if (rc <= 0)
+	{
+		Platform_Log("card: %s lies in over %d pieces, copy it to a fresh card (%d)\n",
+		             name, (int)CARD_MAX_RUNS, (int)rc);
+		return false;
+	}
+	cardRunCount = (uint8_t)rc;
+	cardBlockAt = ~0u;
+	return true;
+}
+
+bool Platform_CardRead(uint32_t offset, void* dst, uint32_t length)
+{
+	if (!cardRunCount || !dst)
+		return false;
+	uint8_t* out = (uint8_t*)dst;
+	//see the bus rule in Platform_CardOpen
+	DmaWait();
+	while (length)
+	{
+		const uint32_t block = offset >> 9;              //512 bytes to a block
+		const uint32_t within = offset & 511;
+		const uint32_t room = 512 - within;
+		const uint32_t take = (room < length) ? room : length;
+		//A long read in one command. sd::read costs about 1.5 ms a block: it has no DMA and polls
+		//SPI1 a byte at a time, so the core does the whole transfer itself. A multi-block read
+		//(CMD18) costs about 0.6 ms once plus 0.17 ms a block and lands them by DMA, close to
+		//nine times faster over a run. A strip of a full screen picture is 2048 bytes and a
+		//scrolling board asks for sixteen of them a frame, so this is the difference between the
+		//board scrolling and crawling.
+		//The two ends go in the same command. A picture does not start on a block boundary, so
+		//this used to leave the first and last blocks of every strip to the slow path: two
+		//blocks a strip, thirty two a frame, which at 1.5 ms each was more than everything else
+		//put together
+#if CARD_MULTIBLOCK
+		if (length >= 1024)
+		{
+			uint32_t lba = 0, runLeft = 0;
+			if (CardWhere(block, &lba, &runLeft))
+			{
+				//every block the wanted bytes touch, the first and last ones included
+				uint32_t want = (within + length + 511) >> 9;
+				if (want > runLeft)
+					want = runLeft;                  //a stream cannot cross a break in the file
+				if (want >= 2)
+				{
+					//what this command actually delivers, which is less than asked for when the
+					//run ends inside it. Whatever is left goes round the loop again
+					uint32_t got = (want << 9) - within;
+					if (got > length)
+						got = length;
+					CardStream stream = { out, got, within };
+					//cardBlock is one of the two the blocks land in, so what it held is gone
+					cardBlockAt = ~0u;
+					if (!sd::stream(lba, want, cardBlock, cardBlock2, CardStreamBlock, &stream))
+					{
+						//a stream that stopped leaves the card mid-command, and only init()
+						//clears it. The caller is told, and the next read starts afresh
+						sd::init();
+						return false;
+					}
+					out += got;
+					offset += got;
+					length -= got;
+					continue;
+				}
+			}
+		}
+#endif
+		//A whole block wanted whole lands where it belongs, with nothing copied after it. Only
+		//when the caller's buffer is evenly placed: the card's DMA writes words
+		if ((within == 0) && (take == 512) && (((uintptr_t)out & 3) == 0))
+		{
+			if (!fat::read(cardRuns, cardRunCount, block, out))
+				return false;
+			//what is held is still what it was, the card was read past it into the caller's buffer
+		}
+		else
+		{
+			if (cardBlockAt != block)
+			{
+					if (!fat::read(cardRuns, cardRunCount, block, cardBlock))
+				{
+					cardBlockAt = ~0u;
+					return false;
+				}
+				cardBlockAt = block;
+			}
+			memcpy(out, cardBlock + within, take);
+		}
+		out += take;
+		offset += take;
+		length -= take;
+	}
+	return true;
+}
+
+void Platform_CardClose(void)
+{
+	cardRunCount = 0;
+}
+
+#endif
+
+
+// ===========================================================================
 // Time and memory
 // ===========================================================================
 

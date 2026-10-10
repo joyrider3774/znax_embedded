@@ -291,4 +291,30 @@ void Platform_Log(const char* format, ...);
 void Platform_StorageRead(uint16_t offset, uint8_t* data, uint16_t length);
 void Platform_StorageWrite(uint16_t offset, const uint8_t* data, uint16_t length);
 
+//1 when this device can read the game's data file from a card, which is where the art goes in a
+//build with CARDIMAGES on, and where the levels of some games will go as well. A device header
+//sets this and implements the three functions below; a device that leaves it at 0 has none of it
+//built and keeps its art in flash.
+//Only a device short of flash wants this. The art as RGB565 is hundreds of KB a skin, which a
+//card holds without noticing and a 50944 byte flash cannot: that is what the one bit and four bit
+//formats exist to get around, and from a card there is nothing to get around. See cardimages.h
+#ifndef PLATFORM_HAS_CARD
+#define PLATFORM_HAS_CARD 0
+#endif
+
+#if PLATFORM_HAS_CARD
+//Finds the game's data file in the card's root and makes it ready to be read. name is its plain
+//8.3 name and name83 the eleven character form a FAT directory entry holds it as, since a reader
+//may look a file up either way: see CARD_FILE_NAME and CARD_FILE_83 in cardindex.h.
+//False when there is no card, no file, or the file cannot be read as a whole. Slow, so this is
+//for starting up and for retrying, not for a frame
+bool Platform_CardOpen(const char* name, const char* name83);
+//length bytes at offset in that file, into dst. False when the read did not come, and the caller
+//then leaves what it was filling as it was rather than drawing rubbish.
+//A device whose card shares a bus with its display does whatever that costs here, so the game may
+//call this wherever it is allowed to draw and need not know how the bus is held
+bool Platform_CardRead(uint32_t offset, void* dst, uint32_t length);
+void Platform_CardClose(void);
+#endif
+
 #endif
