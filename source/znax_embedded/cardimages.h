@@ -27,6 +27,17 @@
 //Here rather than in cardimages.cpp alone: the game names a picture by its CARD_IMG_ number
 #include "cardindex.h"
 
+//1 = the level packs are on the card as well and the game reads them from there instead of out
+//of flash, see CARD_HAS_LEVELS in cardindex.h. They are in the same file as the art and are
+//found through the same open, so this follows CARDIMAGES and is not a switch of its own
+#ifndef CARDLEVELS
+#if CARD_HAS_LEVELS
+#define CARDLEVELS 1
+#else
+#define CARDLEVELS 0
+#endif
+#endif
+
 //false when there is no card, no data file, or the file was not made by this build (CARD_STAMP).
 //Slow, so for starting up and for retrying and not for a frame
 bool CardImages_Open(void);
@@ -73,6 +84,13 @@ bool CardImages_Row(const uint8_t* image, int x, int y, int count, uint16_t* dst
 //display showed while a strip was being put together stopped being visible
 bool CardImages_Rows(const uint8_t* image, int x, int y, int count, int rows, uint16_t* dst);
 
+#if CARDLEVELS
+//Where a level pack lies in the card file and how long it is, by its number in CARD_LEVEL_NAMES.
+//The pack is read through Platform_CardRead a piece at a time and never held: it is run length
+//encoded exactly as flash holds it, and the game's parser walks it once from start to end
+bool CardLevels_Pack(uint8_t which, uint32_t* at, uint32_t* length);
+#endif
+
 //How much of the arena is in use and how often a row had to be read because nothing was cached,
 //for the debug overlay. Reading costs a card command, so a count that climbs every frame says
 //CARDARENA is too small for what that screen draws
@@ -80,4 +98,12 @@ uint16_t CardImages_ArenaUsed(void);
 uint32_t CardImages_Reads(void);
 
 #endif
+
+//A build without the card has no levels on it either, and every #if CARDLEVELS below is then
+//simply not taken
+#ifndef CARDLEVELS
+#define CARDLEVELS 0
+#endif
+
+
 #endif

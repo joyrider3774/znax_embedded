@@ -112,6 +112,12 @@ FMT_RGB565 = 0
 #instead of reading it: a board that repaints the whole screen was reading the whole background
 #off the card every frame. See CardImages_Row
 FMT_ROWS = 1
+
+#The levels section, for a game whose level packs are read off the card as well. They go in
+#exactly as flash holds them, run length encoded by the game's own tools/convert_levelpacks.py,
+#so the game's parser reads the same bytes from either place
+SEC_LEVELS = b"LVLS"
+LVL_ENTRY = 12
 #the sections, by the name the table holds. Levels will be another one of these
 SEC_IMAGES = b"IMGS"
 
@@ -151,6 +157,60 @@ def images(packed):
 
 SKINS = skins()
 IMAGES = images(SKINS)
+
+
+def levels():
+    """What goes in the levels section, [(name, run length encoded bytes), ...], in the order
+    the game asks for them. Empty for a game whose levels this does not recognise, and then the
+    section is left out of the card and the game carries on reading them from flash.
+
+    The games keep their levels in two shapes, and both are taken from the game's own converter
+    so that the bytes on the card are exactly the bytes it would have put in flash:
+      - a file to a pack, the whole pack encoded in one piece (tools/convert_levelpacks.py)
+      - a folder to a pack and a file to a level, each level encoded on its own, which is one
+        entry a level here (tools/convert_levels.py)"""
+    import inspect
+    module = None
+    for name in ("convert_levelpacks", "convert_levels"):
+        try:
+            module = __import__(name)
+            break
+        except ImportError:
+            module = None
+    if (module is None) or not (hasattr(module, "read_packs") and hasattr(module, "rle")):
+        return [], []
+    folder = getattr(module, "LEVELS_DIR", os.path.join(ROOT, "assets", "levelpacks"))
+    if not os.path.isdir(folder):
+        return [], []
+    if len(inspect.signature(module.read_packs).parameters) == 1:
+        packs = module.read_packs(folder)
+        #a pack that came back as bytes is the whole pack in one piece
+        if packs and isinstance(packs[0][1], (bytes, bytearray)):
+            return [(name, bytes(module.rle(data))) for name, data in packs], []
+        #else a folder to a pack and a file to a level, each already encoded whole by the game's
+        #own tool: the header and the three planes the game's reader expects
+        if not hasattr(module, "encode_level"):
+            return [], []
+        out, counts = [], []
+        for pack, levels_in_pack in packs:
+            counts.append(len(levels_in_pack))
+            for file_name, data in levels_in_pack:
+                out.append(("%s/%s" % (pack, file_name), bytes(module.encode_level(data))))
+        return out, counts
+    #a level to an entry: the reader wants to know how many block types a level holds
+    cols, rows = module.playfield_size()
+    out, counts = [], []
+    for pack, levels_in_pack in module.read_packs(folder, cols * rows):
+        counts.append(len(levels_in_pack))
+        for file_name, values in levels_in_pack:
+            #a block type is signed, the border pieces being negative, and is kept as the byte
+            #it comes back out of the reader as. The game casts it back, see LevelReaderNext
+            raw = bytes(v & 0xFF for v in values)
+            out.append(("%s/%s" % (pack, file_name), bytes(module.rle(raw))))
+    return out, counts
+
+
+LEVELS, LEVEL_PACK_COUNTS = levels()
 
 
 #A picture is only worth keeping as one colour a row when that saves something: a small tile
@@ -216,8 +276,30 @@ def stamp():
                 width, height = img.width, img.height
             flat = row_colours(path) is not None
             sizes.append("%s:%dx%d:%d" % (name, width, height, FMT_ROWS if flat else FMT_RGB565))
-    text = ";".join([s for s, _ in SKINS]) + "|" + ";".join(IMAGES) + "|" + ";".join(sizes)
+    #the packs too: a card whose levels are not the ones this build expects is as wrong as one
+    #whose pictures are not, and the game reads both out of the same file
+    packs = ["%s:%d" % (name, len(data)) for name, data in LEVELS]
+    text = (";".join([s for s, _ in SKINS]) + "|" + ";".join(IMAGES) + "|" + ";".join(sizes)
+            + "|" + ";".join(packs))
     return zlib.crc32(text.encode("ascii")) & 0xFFFFFFFF
+
+
+def levels_section():
+    """The levels section's bytes, and a line per pack for the report"""
+    index = bytearray()
+    body = bytearray()
+    report = []
+    #within the section: its own 4 byte head, then the whole index, then the packs
+    base = 4 + LVL_ENTRY * len(LEVELS)
+    for name, encoded in LEVELS:
+        while len(body) % 4:
+            body.append(0)
+        offset = base + len(body)
+        body += encoded
+        index += struct.pack("<IIHH", offset, len(encoded), 0, 0)
+        report.append("  %-28s %7d B at %7d" % (name, len(encoded), offset))
+    head = struct.pack("<HH", len(LEVELS), 0)
+    return head + bytes(index) + bytes(body), report
 
 
 def images_section():
@@ -260,6 +342,10 @@ def pack():
     sections = []
     body, report = images_section()
     sections.append((SEC_IMAGES, body))
+    if LEVELS:
+        lvls, lreport = levels_section()
+        sections.append((SEC_LEVELS, lvls))
+        report += [""] + lreport
 
     out = bytearray(HEADER + SECTION * len(sections))
     out[0:4] = MAGIC
@@ -298,6 +384,7 @@ def write_index_header(path):
         "",
         "//the sections of the container, by the name its table holds. Levels will be another one",
         '#define CARD_SEC_IMAGES "%s"' % SEC_IMAGES.decode(),
+        '#define CARD_SEC_LEVELS "%s"' % SEC_LEVELS.decode(),
         "",
         "//1 when any picture is kept as one colour a row, see FMT_ROWS. The game builds the",
         "//code that draws one only then: a card without any is a game that need not carry it",
@@ -325,6 +412,31 @@ def write_index_header(path):
     for i, name in enumerate(IMAGES):
         lines.append("\tCARD_IMG_%s = %d," % (ident(name), i))
     lines += ["};", ""]
+    #The level packs, when this game's are on the card as well. The game looks a pack up by the
+    #name it already knows it by, so the names are what it needs and the order is the index's
+    lines += [
+        "//1 when the card holds the level packs too, so the game reads them from there and not",
+        "//out of flash. 0 leaves everything about the levels as it was",
+        "#define CARD_HAS_LEVELS %d" % (1 if LEVELS else 0),
+        "",
+    ]
+    if LEVELS:
+        lines += [
+            "#define CARD_LEVEL_COUNT %d" % len(LEVELS),
+            "",
+            "//the packs, in the order the index holds them, by the name the game knows",
+            "#define CARD_LEVEL_NAMES { %s }" % ", ".join('"%s"' % n for n, _ in LEVELS),
+            "",
+        ]
+        #A game whose levels come a pack at a time and a level to an entry needs to know where
+        #one pack ends and the next begins, the entries being one flat list
+        if LEVEL_PACK_COUNTS:
+            lines += [
+                "//how many levels each pack holds, the entries above being one flat list",
+                "#define CARD_LEVEL_PACKS %d" % len(LEVEL_PACK_COUNTS),
+                "#define CARD_LEVEL_PACK_COUNTS { %s }" % ", ".join(str(c) for c in LEVEL_PACK_COUNTS),
+                "",
+            ]
     with io.open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines))
 
@@ -348,6 +460,9 @@ def main():
 
     print("\n".join(report))
     print()
+    if LEVELS:
+        print("%-13s %d packs, %d B" %
+              ("levels:", len(LEVELS), sum(len(data) for _, data in LEVELS)))
     print("%-13s %d skins x %d pictures, %d B index, %d B in all (%.1f KB)" %
           ("card file:", len(SKINS), len(IMAGES), ENTRY * len(SKINS) * len(IMAGES),
            len(data), len(data) / 1024.0))

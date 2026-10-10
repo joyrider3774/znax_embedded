@@ -50,6 +50,10 @@ static const char* problem = NULL;
 static uint8_t skin = 0;
 //where the art section starts, so an entry's own offset can be added to it
 static uint32_t section = 0;
+#if CARDLEVELS
+//the same for the levels section, see CardLevels_Pack
+static uint32_t levels = 0;
+#endif
 
 //The arena. A picture read once is kept here and drawing it again is a copy, which is what makes
 //a tile drawn eighty times a frame affordable.
@@ -92,6 +96,22 @@ bool CardImages_Ready(void) { return ready; }
 const char* CardImages_Problem(void) { return problem; }
 uint8_t CardImages_Skin(void) { return skin; }
 uint8_t CardImages_SkinCount(void) { return CARD_SKIN_COUNT; }
+#if CARDLEVELS
+bool CardLevels_Pack(uint8_t which, uint32_t* at, uint32_t* length)
+{
+	if (!ready || (which >= CARD_LEVEL_COUNT))
+		return false;
+	//the index is the section's own 4 byte head, then 12 bytes an entry, see tools/mkcard.py
+	uint8_t entry[12];
+	if (!Platform_CardRead(levels + 4 + (uint32_t)12 * which, entry, sizeof(entry)))
+		return false;
+	//an entry's offset is counted from its section, as the art's is
+	*at = levels + Read32(entry);
+	*length = Read32(entry + 4);
+	return *length != 0;
+}
+#endif
+
 uint16_t CardImages_ArenaUsed(void) { return arenaUsed; }
 uint32_t CardImages_Reads(void) { return reads; }
 
@@ -150,14 +170,26 @@ bool CardImages_Open(void)
 		{
 			section = Read32(entry + 4);
 			length = Read32(entry + 8);
-			break;
 		}
+#if CARDLEVELS
+		//the levels sit in the same file, found the same way. Looking for both in the one walk
+		//keeps the open to a single pass over the table
+		else if (memcmp(entry, CARD_SEC_LEVELS, 4) == 0)
+			levels = Read32(entry + 4);
+#endif
 	}
 	if (!section)
 	{
 		problem = "NO ART ON CARD";
 		return false;
 	}
+#if CARDLEVELS
+	if (!levels)
+	{
+		problem = "NO LEVELS ON CARD";
+		return false;
+	}
+#endif
 
 	//the section's own head says what it holds, which has to be what this build expects
 	uint8_t sec[4];
