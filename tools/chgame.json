@@ -1,0 +1,12 @@
+{
+  "id": "znax",
+  "title": "ZNAX",
+  "author": "Willems Davy",
+  "version": "1.0",
+  "description": "A Remake of the Znax flash game by Nick Kouvaris",
+  "genre": "Puzzle",
+  "license": "MIT",
+  "url": "https://github.com/joyrider3774/znax_embedded",
+  "sourceUrl": "https://github.com/joyrider3774/znax_embedded",
+  "sdcard": "sdcard"
+}
